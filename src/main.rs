@@ -1,11 +1,8 @@
 use anyhow::{anyhow, Context, Result};
-use config::Config;
+use config::{load_config, Config};
 use dictionary_service::DictionaryService;
 use eframe::CreationContext;
-use global_hotkey::{
-    hotkey::{Code, HotKey, Modifiers},
-    GlobalHotKeyEvent, GlobalHotKeyManager,
-};
+use global_hotkey::{hotkey::HotKey, GlobalHotKeyManager};
 use ocr_service::OcrService;
 
 pub mod config;
@@ -40,7 +37,8 @@ struct EframeApp {
 
 impl EframeApp {
     pub fn new(cc: &CreationContext) -> Result<Self> {
-        let config: Config = todo!();
+        let config: Config =
+            load_config("config.json").context("Could not load main configuration file")?;
 
         let manager =
             GlobalHotKeyManager::new().context("Failed to initialise GlobalHotKeyManager")?;
@@ -51,9 +49,15 @@ impl EframeApp {
 
         let mut ocr: Box<dyn OcrService> = config.ocr_service.into();
         ocr.init()
-            .with_context(|| format!("Failed to init OCR Service `{}`", ocr.name()))?;
+            .with_context(|| format!("Failed to initialise OCR Service `{}`", ocr.name()))?;
 
-        let dictionary: Box<dyn DictionaryService> = config.dictionary_service.into();
+        let mut dictionary: Box<dyn DictionaryService> = config.dictionary_service.into();
+        dictionary.init().with_context(|| {
+            format!(
+                "Failed to initialise Dictionary Service: `{}`",
+                dictionary.name()
+            )
+        })?;
 
         Ok(Self {
             config,

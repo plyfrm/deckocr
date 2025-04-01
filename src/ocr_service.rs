@@ -7,6 +7,7 @@ pub trait OcrService {
 
     fn init(&mut self) -> Result<()>;
     fn terminate(&mut self) -> Result<()>;
+
     fn ocr(&mut self, image: RgbaImage) -> Result<Vec<TextBound>>;
 }
 

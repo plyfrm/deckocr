@@ -3,6 +3,9 @@ use anyhow::Result;
 pub trait DictionaryService {
     fn name(&self) -> &'static str;
 
+    fn init(&mut self) -> Result<()>;
+    fn terminate(&mut self) -> Result<()>;
+
     fn parse_text_blocks(&mut self, text: &[&str]) -> Result<Vec<Vec<Word>>>;
     fn add_to_deck(&mut self, word: &Word) -> Result<()>;
 }

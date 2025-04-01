@@ -4,29 +4,37 @@ use anyhow::{anyhow, Context, Result};
 use global_hotkey::hotkey;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use crate::{dictionary_service::DictionaryService, ocr_service::OcrService};
+use crate::{
+    dictionary_service::{DictionaryService, DummyDictionaryService},
+    ocr_service::{DummyOcrService, OcrService},
+};
 
-pub fn load_config<T: DeserializeOwned, P: AsRef<Path>>(path: P) -> Result<T> {
+/// Loads a configuration file, or creates a default configuration struct if the file does not exist.
+pub fn load_config<T: DeserializeOwned + Default, P: AsRef<Path>>(path: P) -> Result<T> {
     let mut config_path =
         dirs::config_dir().ok_or_else(|| anyhow!("Could not find suitable config diractory"))?;
     config_path.push(env!("CARGO_PKG_NAME"));
     config_path.push(path);
 
-    let file = File::open(&config_path).with_context(|| {
-        format!(
-            "Could not open configuration file: `{}`",
-            config_path.display()
-        )
-    })?;
+    if !config_path.exists() {
+        Ok(T::default())
+    } else {
+        let file = File::open(&config_path).with_context(|| {
+            format!(
+                "Could not open configuration file: `{}`",
+                config_path.display()
+            )
+        })?;
 
-    let config = serde_json::from_reader(file).with_context(|| {
-        format!(
-            "Could not read configuration file: `{}`",
-            config_path.display(),
-        )
-    })?;
+        let config = serde_json::from_reader(file).with_context(|| {
+            format!(
+                "Could not read configuration file: `{}`",
+                config_path.display(),
+            )
+        })?;
 
-    Ok(config)
+        Ok(config)
+    }
 }
 
 pub fn save_config<T: Serialize, P: AsRef<Path>>(path: P, config: &T) -> Result<()> {
@@ -71,24 +79,39 @@ pub struct Config {
     pub dictionary_service: DictionaryServiceList,
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            hotkey_modifiers: hotkey::Modifiers::ALT,
+            hotkey_keycode: hotkey::Code::KeyS,
+            ocr_service: OcrServiceList::Dummy,
+            dictionary_service: DictionaryServiceList::Dummy,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub enum OcrServiceList {
-    MangaOcr,
+    Dummy,
 }
 
 impl Into<Box<dyn OcrService>> for OcrServiceList {
     fn into(self) -> Box<dyn OcrService> {
-        todo!()
+        Box::new(match self {
+            Self::Dummy => DummyOcrService,
+        })
     }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub enum DictionaryServiceList {
-    Jpdb,
+    Dummy,
 }
 
 impl Into<Box<dyn DictionaryService>> for DictionaryServiceList {
     fn into(self) -> Box<dyn DictionaryService> {
-        todo!()
+        Box::new(match self {
+            Self::Dummy => DummyDictionaryService,
+        })
     }
 }

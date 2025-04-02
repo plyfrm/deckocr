@@ -1,5 +1,5 @@
 use anyhow::Result;
-use eframe::egui::Rect;
+use eframe::egui::{self, Rect};
 use image::RgbaImage;
 
 pub trait OcrService {
@@ -7,6 +7,7 @@ pub trait OcrService {
 
     fn init(&mut self) -> Result<()>;
     fn terminate(&mut self) -> Result<()>;
+    fn config_gui(&mut self, ui: &mut egui::Ui);
 
     fn ocr(&mut self, image: RgbaImage) -> Result<Vec<TextBound>>;
 }
@@ -20,7 +21,7 @@ pub struct DummyOcrService;
 
 impl OcrService for DummyOcrService {
     fn name(&self) -> &'static str {
-        std::any::type_name_of_val(self)
+        "DummyOcrService"
     }
 
     fn init(&mut self) -> Result<()> {
@@ -29,6 +30,10 @@ impl OcrService for DummyOcrService {
 
     fn terminate(&mut self) -> Result<()> {
         Ok(())
+    }
+
+    fn config_gui(&mut self, ui: &mut egui::Ui) {
+        ui.checkbox(&mut false, "checkbox that does nothing");
     }
 
     fn ocr(&mut self, _image: RgbaImage) -> Result<Vec<TextBound>> {

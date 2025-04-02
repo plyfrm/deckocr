@@ -1,10 +1,12 @@
 use anyhow::Result;
+use eframe::egui;
 
 pub trait DictionaryService {
     fn name(&self) -> &'static str;
 
     fn init(&mut self) -> Result<()>;
     fn terminate(&mut self) -> Result<()>;
+    fn config_gui(&mut self, ui: &mut egui::Ui);
 
     fn parse_text_blocks(&mut self, text: &[&str]) -> Result<Vec<Vec<Word>>>;
     fn add_to_deck(&mut self, word: &Word) -> Result<()>;
@@ -33,7 +35,7 @@ pub struct DummyDictionaryService;
 
 impl DictionaryService for DummyDictionaryService {
     fn name(&self) -> &'static str {
-        std::any::type_name_of_val(self)
+        "DummyDictionaryService"
     }
 
     fn init(&mut self) -> Result<()> {
@@ -42,6 +44,10 @@ impl DictionaryService for DummyDictionaryService {
 
     fn terminate(&mut self) -> Result<()> {
         Ok(())
+    }
+
+    fn config_gui(&mut self, ui: &mut egui::Ui) {
+        ui.checkbox(&mut false, "checkbox that does nothing");
     }
 
     fn parse_text_blocks(&mut self, _text: &[&str]) -> Result<Vec<Vec<Word>>> {

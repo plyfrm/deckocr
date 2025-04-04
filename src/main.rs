@@ -1,14 +1,24 @@
+use std::{
+    any::Any,
+    marker::PhantomData,
+    sync::{
+        mpsc::{self, Sender},
+        Arc, Mutex,
+    },
+    thread::JoinHandle,
+};
+
 use anyhow::{anyhow, Context, Result};
 use config::{AppConfig, Config};
 use dictionary_service::DictionaryService;
 use eframe::{
-    egui::{self, vec2},
+    egui::{self, vec2, Color32, TextureHandle},
     epaint::text::{FontInsert, InsertFontFamily},
-    CreationContext,
+    App, CreationContext,
 };
 use global_hotkey::{hotkey::HotKey, GlobalHotKeyEvent, GlobalHotKeyManager};
 use ocr_service::OcrService;
-use ocr_window::OcrWindow;
+use ocr_window::{fill_texture, OcrWindow};
 
 pub mod config;
 pub mod dictionary_service;
@@ -34,8 +44,9 @@ fn main() -> Result<()> {
 struct EframeApp {
     config: AppConfig,
     ocr_hotkey: HotKey,
-    ocr_service: Box<dyn OcrService>,
-    dictionary_service: Box<dyn DictionaryService>,
+    services: ServiceManager,
+
+    ocr_window_loading: Option<(TextureHandle, ServiceJob<Result<OcrWindow>>)>,
     ocr_window: Option<OcrWindow>,
 
     errors: Errors,
@@ -68,31 +79,20 @@ impl EframeApp {
             .register(ocr_hotkey)
             .context("Failed to register hotkey with GlobalHotKeyManager")?;
 
-        let mut ocr_service: Box<dyn OcrService> = config.ocr_service.into();
-        ocr_service.init().with_context(|| {
-            format!("Failed to initialise OCR Service `{}`", ocr_service.name())
-        })?;
-
-        let mut dictionary_service: Box<dyn DictionaryService> = config.dictionary_service.into();
-        dictionary_service.init().with_context(|| {
-            format!(
-                "Failed to initialise Dictionary Service: `{}`",
-                dictionary_service.name()
-            )
-        })?;
+        let services = ServiceManager::new(&config).context("Failed to initialise services")?;
 
         Ok(Self {
             config,
             ocr_hotkey,
-            ocr_service,
-            dictionary_service,
+            services,
+
+            ocr_window_loading: None,
             ocr_window: None,
 
             errors: Default::default(),
         })
     }
 
-    // TODO: show window immediately with a spinner while things are loading
     pub fn trigger_ocr(&mut self, ctx: &egui::Context) -> Result<()> {
         let monitor = xcap::Monitor::all()?
             .into_iter()
@@ -117,10 +117,18 @@ impl EframeApp {
             },
         );
 
-        let text_recs = self.ocr_service.ocr(image)?;
-        let words = self.dictionary_service.parse_text_rects(&text_recs)?;
+        let job = {
+            let config = self.config.clone();
+            let texture = texture.clone();
+            self.services.exec(move |services| -> Result<OcrWindow> {
+                let text_recs = services.ocr.ocr(image)?;
+                let words = services.dictionary.parse_text_rects(&text_recs)?;
+                let window = OcrWindow::new(config, texture, words)?;
+                Ok(window)
+            })
+        };
 
-        self.ocr_window = Some(OcrWindow::new(self.config.clone(), texture, words)?);
+        self.ocr_window_loading = Some((texture, job));
 
         Ok(())
     }
@@ -130,14 +138,6 @@ impl eframe::App for EframeApp {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         if let Err(e) = self.config.save() {
             log::error!("Error while saving configuration file: `{e}`");
-        }
-
-        if let Err(e) = self.ocr_service.terminate() {
-            log::error!("Error while terminating OCR service: `{e}`");
-        }
-
-        if let Err(e) = self.dictionary_service.terminate() {
-            log::error!("Error while terminating Dictionary service: `{e}`");
         }
     }
 
@@ -161,23 +161,63 @@ impl eframe::App for EframeApp {
 
         let mut ocr_window_close_requested = false;
 
-        if let Some(ocr_window) = &mut self.ocr_window {
+        if self.ocr_window_loading.is_some() || self.ocr_window.is_some() {
+            let mut has_finished_loading = true;
+
+            let mut size = vec2(0.0, 0.0);
+
+            if let Some((texture, job)) = &mut self.ocr_window_loading {
+                match job.try_finish().transpose() {
+                    None => has_finished_loading = false,
+                    Some(Err(e)) => self.errors.push(e),
+                    Some(Ok(result)) => match *result {
+                        Ok(ocr_window) => self.ocr_window = Some(ocr_window),
+                        Err(e) => self.errors.push(e),
+                    },
+                }
+
+                size = texture.size_vec2();
+            }
+
+            if has_finished_loading {
+                self.ocr_window_loading = None;
+            }
+
+            if let Some(ocr_window) = &self.ocr_window {
+                size = ocr_window.texture.size_vec2();
+            }
+
             ctx.show_viewport_immediate(
                 egui::ViewportId(egui::Id::new("ocr_viewport")),
                 egui::ViewportBuilder {
-                    inner_size: Some(ocr_window.texture.size_vec2()),
+                    inner_size: Some(size),
                     fullscreen: Some(self.config.fullscreen),
                     ..Default::default()
                 },
                 |ctx, _| {
-                    let viewport_info = ocr_window.show(
-                        ctx,
-                        &mut self.errors,
-                        &mut self.dictionary_service,
-                        self.ocr_service.supports_text_rects(),
-                    );
-                    ocr_window_close_requested =
-                        viewport_info.close_requested() || ocr_window.should_close;
+                    if let Some((texture, _)) = &self.ocr_window_loading {
+                        egui::CentralPanel::default().show(ctx, |ui| {
+                            fill_texture(ctx, ui, texture);
+                            ui.centered_and_justified(|ui| {
+                                // FIXME: doesn't animate for some reason
+                                ui.add(
+                                    egui::Spinner::new()
+                                        .color(Color32::from_white_alpha(96))
+                                        .size(48.0),
+                                );
+                            });
+                        });
+                    }
+
+                    if let Some(ocr_window) = &mut self.ocr_window {
+                        ocr_window.show(ctx, &mut self.errors, &mut self.services);
+
+                        if ocr_window.should_close
+                            || ctx.input(|input| input.viewport().close_requested())
+                        {
+                            ocr_window_close_requested = true;
+                        }
+                    }
                 },
             );
         }
@@ -208,24 +248,29 @@ impl eframe::App for EframeApp {
 
                             ui.separator();
 
+                            let ocr_name = self.services.ocr(|ocr| ocr.name());
+                            let dictionary_name =
+                                self.services.dictionary(|dictionary| dictionary.name());
+
                             egui::CollapsingHeader::new(
-                                egui::RichText::new(format!("OCR: {}", self.ocr_service.name()))
-                                    .size(header_size),
+                                egui::RichText::new(format!("OCR: {ocr_name}")).size(header_size),
                             )
                             .default_open(true)
-                            .show_unindented(ui, |ui| self.ocr_service.config_gui(ui));
+                            .show_unindented(ui, |ui| {
+                                self.services.ocr(|ocr| ocr.config_gui(ui));
+                            });
 
                             ui.separator();
 
                             egui::CollapsingHeader::new(
-                                egui::RichText::new(format!(
-                                    "Dictionary: {}",
-                                    self.dictionary_service.name()
-                                ))
-                                .size(header_size),
+                                egui::RichText::new(format!("Dictionary: {dictionary_name}",))
+                                    .size(header_size),
                             )
                             .default_open(true)
-                            .show_unindented(ui, |ui| self.dictionary_service.config_gui(ui));
+                            .show_unindented(ui, |ui| {
+                                self.services
+                                    .dictionary(|dictionary| dictionary.config_gui(ui));
+                            });
                         });
                     });
 
@@ -294,5 +339,133 @@ impl Errors {
         }
 
         remove.map(|idx| self.0.swap_remove(idx));
+    }
+}
+
+pub struct ServiceManager {
+    _thread: JoinHandle<()>,
+    services: Arc<Mutex<Services>>,
+    tx: mpsc::Sender<Box<dyn FnOnce(&mut Services) + Send>>,
+}
+
+pub struct Services {
+    pub ocr: Box<dyn OcrService + Send>,
+    pub dictionary: Box<dyn DictionaryService + Send>,
+}
+
+impl ServiceManager {
+    pub fn new(config: &AppConfig) -> Result<Self> {
+        let mut services = Services {
+            ocr: config.ocr_service.into(),
+            dictionary: config.dictionary_service.into(),
+        };
+
+        services.ocr.init()?;
+        services.dictionary.init()?;
+
+        let services = Arc::new(Mutex::new(services));
+
+        let (tx, rx) = mpsc::channel();
+
+        let thread = {
+            let services = Arc::clone(&services);
+            std::thread::spawn(move || loop {
+                let Ok(f): std::result::Result<
+                    Box<dyn FnOnce(&mut Services) + Send>,
+                    mpsc::RecvError,
+                > = rx.recv() else {
+                    drop(services);
+                    break;
+                };
+
+                let mut lock = services.lock().unwrap();
+                f(&mut lock);
+                drop(lock);
+            })
+        };
+
+        Ok(ServiceManager {
+            _thread: thread,
+            services,
+            tx,
+        })
+    }
+
+    pub fn exec<R: Send + 'static>(
+        &mut self,
+        f: impl FnOnce(&mut Services) -> R + Send + 'static,
+    ) -> ServiceJob<R> {
+        let (tx, rx) = mpsc::channel();
+
+        let wrapped = move |inner: &mut Services| {
+            let r = f(inner);
+            let boxed: Box<dyn Any + Send> = Box::new(r);
+            tx.send(boxed).unwrap();
+        };
+
+        self.tx.send(Box::new(wrapped)).unwrap();
+
+        ServiceJob {
+            _t: PhantomData,
+            rx,
+        }
+    }
+
+    pub fn ocr<R>(&mut self, f: impl FnOnce(&mut Box<dyn OcrService + Send>) -> R) -> R {
+        let mut lock = self.services.lock().unwrap();
+        let r = f(&mut lock.ocr);
+        drop(lock);
+        r
+    }
+
+    pub fn dictionary<R>(
+        &mut self,
+        f: impl FnOnce(&mut Box<dyn DictionaryService + Send>) -> R,
+    ) -> R {
+        let mut lock = self.services.lock().unwrap();
+        let r = f(&mut lock.dictionary);
+        drop(lock);
+        r
+    }
+}
+
+impl Drop for Services {
+    fn drop(&mut self) {
+        if let Err(e) = self.ocr.terminate() {
+            log::error!(
+                "Error while terminating OCR service {}: `{e}`",
+                self.ocr.name()
+            );
+        }
+        if let Err(e) = self.dictionary.terminate() {
+            log::error!(
+                "Error while terminating Dictionary service {}: `{e}`",
+                self.dictionary.name()
+            );
+        }
+    }
+}
+
+pub struct ServiceJob<T> {
+    _t: PhantomData<T>,
+    rx: mpsc::Receiver<Box<dyn Any + Send>>,
+}
+
+impl<T: 'static> ServiceJob<T> {
+    pub fn try_finish(&mut self) -> Result<Option<Box<T>>> {
+        match self.rx.try_recv() {
+            Ok(t) => Ok(Some(t.downcast().unwrap())),
+            Err(mpsc::TryRecvError::Empty) => Ok(None),
+            Err(mpsc::TryRecvError::Disconnected) => {
+                Err(anyhow!("ServiceJob channel was disconnected"))
+            }
+        }
+    }
+
+    pub fn finish(&mut self) -> Result<Box<T>> {
+        self.rx
+            .recv()
+            .map(|t| t.downcast().unwrap())
+            .map_err(|_| anyhow!("ServiceJob channel was disconnected"))
     }
 }

@@ -182,8 +182,8 @@ pub enum OcrServiceList {
     Owocr,
 }
 
-impl Into<Box<dyn OcrService>> for OcrServiceList {
-    fn into(self) -> Box<dyn OcrService> {
+impl Into<Box<dyn OcrService + Send>> for OcrServiceList {
+    fn into(self) -> Box<dyn OcrService + Send> {
         match self {
             Self::Owocr => Box::new(Owocr::default()),
         }
@@ -196,8 +196,8 @@ pub enum DictionaryServiceList {
     Jpdb,
 }
 
-impl Into<Box<dyn DictionaryService>> for DictionaryServiceList {
-    fn into(self) -> Box<dyn DictionaryService> {
+impl Into<Box<dyn DictionaryService + Send>> for DictionaryServiceList {
+    fn into(self) -> Box<dyn DictionaryService + Send> {
         match self {
             Self::Dummy => Box::new(DummyDictionaryService),
             Self::Jpdb => Box::new(Jpdb::default()),

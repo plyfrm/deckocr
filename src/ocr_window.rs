@@ -11,7 +11,7 @@ use gilrs::Gilrs;
 use crate::{
     config::AppConfig,
     dictionary_service::{DictionaryService, TextWithRuby, Word},
-    Errors,
+    Errors, ServiceManager,
 };
 
 /// Holding the skip button will automatically skip to those words
@@ -67,33 +67,29 @@ impl OcrWindow {
         &mut self,
         ctx: &egui::Context,
         errors: &mut Errors,
-        dictionary_service: &mut Box<dyn DictionaryService>,
-        with_recs: bool,
+        services: &mut ServiceManager,
     ) -> ViewportInfo {
         if self.first_frame {
             self.first_frame = false;
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            let rect = ctx.available_rect();
-            ui.painter().image(
-                self.texture.id(),
-                rect,
-                Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
-                Color32::WHITE,
-            );
-            ui.painter()
-                .rect_filled(rect, CornerRadius::ZERO, Color32::from_black_alpha(224));
+        let with_rects = *services
+            .exec(|services| services.ocr.supports_text_rects())
+            .finish()
+            .unwrap();
 
-            if with_recs {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            fill_texture(ctx, ui, &self.texture);
+
+            if with_rects {
                 self.show_with_rects(ui);
             } else {
                 self.show_without_rects(ui);
             }
         });
 
-        if let Err(e) = self.handle_input(ctx, dictionary_service) {
+        if let Err(e) = self.handle_input(ctx, services) {
             errors.push(e);
         }
 
@@ -102,11 +98,7 @@ impl OcrWindow {
 
     // TODO: controller input
     // TODO: allow scrolling the text and definition panes
-    fn handle_input(
-        &mut self,
-        ctx: &egui::Context,
-        dictionary_service: &mut Box<dyn DictionaryService>,
-    ) -> Result<()> {
+    fn handle_input(&mut self, ctx: &egui::Context, services: &mut ServiceManager) -> Result<()> {
         fn move_h(
             direction: i32,
             selected_word: (usize, usize),
@@ -234,8 +226,12 @@ impl OcrWindow {
         });
 
         if add_to_deck {
-            dictionary_service
-                .add_to_deck(&self.words[self.selected_word.0].1[self.selected_word.1])?;
+            let word = self.words[self.selected_word.0].1[self.selected_word.1].clone();
+
+            services
+                .exec(move |services| -> Result<()> { services.dictionary.add_to_deck(&word) })
+                .finish()?;
+
             self.words[self.selected_word.0].1[self.selected_word.1]
                 .definition
                 .as_mut()
@@ -547,4 +543,16 @@ impl<'a> Widget for TextWithRubyWidget<'a> {
 
         response
     }
+}
+
+pub fn fill_texture(ctx: &egui::Context, ui: &mut egui::Ui, texture: &TextureHandle) {
+    let rect = ctx.available_rect();
+    ui.painter().image(
+        texture.id(),
+        rect,
+        Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
+        Color32::WHITE,
+    );
+    ui.painter()
+        .rect_filled(rect, CornerRadius::ZERO, Color32::from_black_alpha(224));
 }

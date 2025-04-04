@@ -14,22 +14,22 @@ pub trait DictionaryService {
     fn add_to_deck(&mut self, word: &Word) -> Result<()>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Word {
     pub text: TextWithRuby,
     pub definition: Option<Definition>,
 }
 
-#[derive(Debug, Hash)]
+#[derive(Debug, Hash, Clone)]
 pub struct TextWithRuby(pub Vec<TextFragment>);
 
-#[derive(Debug, Hash)]
+#[derive(Debug, Hash, Clone)]
 pub struct TextFragment {
     pub text: String,
     pub ruby: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Definition {
     pub spelling: String,
     pub reading: String,

@@ -1,10 +1,7 @@
 use std::{
     any::Any,
     marker::PhantomData,
-    sync::{
-        mpsc::{self, Sender},
-        Arc, Mutex,
-    },
+    sync::{mpsc, Arc, Mutex},
     thread::JoinHandle,
 };
 
@@ -14,7 +11,7 @@ use dictionary_service::DictionaryService;
 use eframe::{
     egui::{self, vec2, Color32, TextureHandle},
     epaint::text::{FontInsert, InsertFontFamily},
-    App, CreationContext,
+    CreationContext,
 };
 use global_hotkey::{hotkey::HotKey, GlobalHotKeyEvent, GlobalHotKeyManager};
 use ocr_service::OcrService;

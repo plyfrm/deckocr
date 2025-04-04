@@ -10,7 +10,7 @@ use gilrs::Gilrs;
 
 use crate::{
     config::AppConfig,
-    dictionary_service::{DictionaryService, TextWithRuby, Word},
+    dictionary_service::{TextWithRuby, Word},
     Errors, ServiceManager,
 };
 
@@ -228,9 +228,10 @@ impl OcrWindow {
         if add_to_deck {
             let word = self.words[self.selected_word.0].1[self.selected_word.1].clone();
 
-            services
+            let result = services
                 .exec(move |services| -> Result<()> { services.dictionary.add_to_deck(&word) })
                 .finish()?;
+            (*result)?;
 
             self.words[self.selected_word.0].1[self.selected_word.1]
                 .definition

@@ -1,4 +1,4 @@
-use std::{fs::File, path::Path};
+use std::{collections::HashMap, fs::File};
 
 use anyhow::{anyhow, Context, Result};
 use eframe::egui;
@@ -6,13 +6,21 @@ use global_hotkey::hotkey;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::{
-    dictionary_service::{DictionaryService, DummyDictionaryService},
-    ocr_service::{DummyOcrService, OcrService},
+    dictionary_service::{jpdb::Jpdb, DictionaryService, DummyDictionaryService},
+    ocr_service::{owocr::Owocr, OcrService},
 };
 
 // TODO: fix config issues
 // with each service's config being part of its trait, we currently cannot change the config gui
 // when the user changes which services they use
+
+const CARD_STATE_DEFAULTS: &[(&str, [u8; 3])] = &[
+    ("not in deck", [90, 220, 255]),
+    ("new", [170, 240, 255]),
+    ("due", [255, 100, 90]),
+    ("known", [170, 255, 170]),
+    ("blacklisted", [192, 192, 192]),
+];
 
 pub trait Config: Serialize + DeserializeOwned + Default {
     fn path() -> &'static str;
@@ -79,7 +87,7 @@ pub trait Config: Serialize + DeserializeOwned + Default {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     // https://w3c.github.io/uievents-key/#keys-modifier
     pub hotkey_modifiers: hotkey::Modifiers,
@@ -87,6 +95,11 @@ pub struct AppConfig {
     pub hotkey_keycode: hotkey::Code,
     pub ocr_service: OcrServiceList,
     pub dictionary_service: DictionaryServiceList,
+
+    pub zoom_factor: f32,
+    pub fullscreen: bool,
+
+    pub card_colours: HashMap<String, [u8; 3]>,
 }
 
 impl Config for AppConfig {
@@ -98,54 +111,97 @@ impl Config for AppConfig {
         egui::ComboBox::from_label("OCR Service")
             .selected_text(format!("{:?}", self.ocr_service))
             .show_ui(ui, |ui| {
-                ui.selectable_value(&mut self.ocr_service, OcrServiceList::Dummy, "Dummy");
+                ui.selectable_value(&mut self.ocr_service, OcrServiceList::Owocr, "owocr");
             });
+
         egui::ComboBox::from_label("Dictionary Service")
             .selected_text(format!("{:?}", self.dictionary_service))
             .show_ui(ui, |ui| {
+                ui.selectable_value(
+                    &mut self.dictionary_service,
+                    DictionaryServiceList::Jpdb,
+                    "jpdb",
+                );
                 ui.selectable_value(
                     &mut self.dictionary_service,
                     DictionaryServiceList::Dummy,
                     "Dummy",
                 );
             });
+
+        ui.add(
+            egui::DragValue::new(&mut self.zoom_factor)
+                .prefix("UI Scaling: ")
+                .range(0.5..=2.0)
+                .speed(0.01)
+                .custom_formatter(|n, _| format!("{}%", (n * 100.0) as i32))
+                .custom_parser(|s| {
+                    s.trim_end_matches('%')
+                        .parse::<f64>()
+                        .ok()
+                        .map(|n| n / 100.0)
+                }),
+        );
+
+        ui.checkbox(&mut self.fullscreen, "Fullscreen");
+
+        for (card_state, _) in CARD_STATE_DEFAULTS {
+            if let Some(srgb) = self.card_colours.get_mut(*card_state) {
+                ui.horizontal(|ui| {
+                    egui::color_picker::color_edit_button_srgb(ui, srgb);
+                    ui.label(format!("'{card_state}' colour"));
+                });
+            }
+        }
     }
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
+        let mut card_colours = HashMap::new();
+        for (card_state, srgb) in CARD_STATE_DEFAULTS {
+            card_colours.insert((*card_state).to_owned(), *srgb);
+        }
+
         Self {
             hotkey_modifiers: hotkey::Modifiers::ALT,
-            hotkey_keycode: hotkey::Code::KeyS,
-            ocr_service: OcrServiceList::Dummy,
-            dictionary_service: DictionaryServiceList::Dummy,
+            hotkey_keycode: hotkey::Code::F12,
+            ocr_service: OcrServiceList::Owocr,
+            dictionary_service: DictionaryServiceList::Jpdb,
+
+            zoom_factor: 1.0,
+            fullscreen: true,
+
+            card_colours,
         }
     }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
 pub enum OcrServiceList {
-    Dummy,
+    Owocr,
 }
 
 impl Into<Box<dyn OcrService>> for OcrServiceList {
     fn into(self) -> Box<dyn OcrService> {
-        Box::new(match self {
-            Self::Dummy => DummyOcrService,
-        })
+        match self {
+            Self::Owocr => Box::new(Owocr::default()),
+        }
     }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
 pub enum DictionaryServiceList {
     Dummy,
+    Jpdb,
 }
 
 impl Into<Box<dyn DictionaryService>> for DictionaryServiceList {
     fn into(self) -> Box<dyn DictionaryService> {
-        Box::new(match self {
-            Self::Dummy => DummyDictionaryService,
-        })
+        match self {
+            Self::Dummy => Box::new(DummyDictionaryService),
+            Self::Jpdb => Box::new(Jpdb::default()),
+        }
     }
 }
 

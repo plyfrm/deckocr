@@ -26,7 +26,6 @@ pub struct OcrWindow {
 
     pub words: Vec<(Rect, Vec<Word>)>,
 
-    pub first_frame: bool,
     pub word_rects: HashMap<(usize, usize), Rect>, // used for finding next word on user input
     pub selected_word: (usize, usize),
 }
@@ -57,7 +56,6 @@ impl OcrWindow {
 
             words,
 
-            first_frame: true,
             word_rects: Default::default(),
             selected_word,
         })
@@ -69,11 +67,6 @@ impl OcrWindow {
         errors: &mut Errors,
         services: &mut ServiceManager,
     ) -> ViewportInfo {
-        if self.first_frame {
-            self.first_frame = false;
-            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-        }
-
         let with_rects = *services
             .exec(|services| services.ocr.supports_text_rects())
             .finish()
@@ -171,7 +164,9 @@ impl OcrWindow {
                 f(direction, self.selected_word, &self.words, &self.word_rects)
                     .map(|idx| self.selected_word = idx);
             } else {
-                loop {
+                let word_count = self.words.iter().map(|(_, v)| v.iter()).flatten().count();
+                // NOTE: the upper bound is a workaround for the alg going into an infinite loop sometimes. need to revise this at some point
+                for _ in 0..word_count {
                     let new = f(direction, self.selected_word, &self.words, &self.word_rects)
                         .map(|idx| self.selected_word = idx);
                     if new.is_none() {

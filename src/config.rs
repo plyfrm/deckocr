@@ -6,7 +6,7 @@ use global_hotkey::hotkey;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::{
-    dictionary_service::{jpdb::Jpdb, DictionaryService, DummyDictionaryService},
+    dictionary_service::{jpdb::Jpdb, DictionaryService},
     ocr_service::{owocr::Owocr, OcrService},
 };
 
@@ -96,6 +96,7 @@ pub struct AppConfig {
     pub ocr_service: OcrServiceList,
     pub dictionary_service: DictionaryServiceList,
 
+    // TODO: window size
     pub zoom_factor: f32,
     pub fullscreen: bool,
 
@@ -108,6 +109,24 @@ impl Config for AppConfig {
     }
 
     fn gui(&mut self, ui: &mut egui::Ui) {
+        let spacing = 5.0;
+
+        // TODO: let the user set the hotkey from the config panel directly
+        ui.add_enabled_ui(false, |ui| {
+            let mut hotkey = global_hotkey::hotkey::HotKey::new(
+                Some(self.hotkey_modifiers),
+                self.hotkey_keycode,
+            )
+            .to_string();
+
+            ui.horizontal(|ui| {
+                ui.label("OCR Hotkey: ");
+                ui.text_edit_singleline(&mut hotkey);
+            });
+        });
+
+        ui.add_space(spacing);
+
         egui::ComboBox::from_label("OCR Service")
             .selected_text(format!("{:?}", self.ocr_service))
             .show_ui(ui, |ui| {
@@ -122,12 +141,9 @@ impl Config for AppConfig {
                     DictionaryServiceList::Jpdb,
                     "jpdb",
                 );
-                ui.selectable_value(
-                    &mut self.dictionary_service,
-                    DictionaryServiceList::Dummy,
-                    "Dummy",
-                );
             });
+
+        ui.add_space(spacing);
 
         ui.add(
             egui::DragValue::new(&mut self.zoom_factor)
@@ -145,14 +161,18 @@ impl Config for AppConfig {
 
         ui.checkbox(&mut self.fullscreen, "Fullscreen");
 
-        for (card_state, _) in CARD_STATE_DEFAULTS {
-            if let Some(srgb) = self.card_colours.get_mut(*card_state) {
-                ui.horizontal(|ui| {
-                    egui::color_picker::color_edit_button_srgb(ui, srgb);
-                    ui.label(format!("'{card_state}' colour"));
-                });
+        ui.add_space(spacing);
+
+        ui.collapsing("Word Colours", |ui| {
+            for (card_state, _) in CARD_STATE_DEFAULTS {
+                if let Some(srgb) = self.card_colours.get_mut(*card_state) {
+                    ui.horizontal(|ui| {
+                        egui::color_picker::color_edit_button_srgb(ui, srgb);
+                        ui.label(*card_state);
+                    });
+                }
             }
-        }
+        });
     }
 }
 
@@ -192,36 +212,13 @@ impl Into<Box<dyn OcrService + Send>> for OcrServiceList {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
 pub enum DictionaryServiceList {
-    Dummy,
     Jpdb,
 }
 
 impl Into<Box<dyn DictionaryService + Send>> for DictionaryServiceList {
     fn into(self) -> Box<dyn DictionaryService + Send> {
         match self {
-            Self::Dummy => Box::new(DummyDictionaryService),
             Self::Jpdb => Box::new(Jpdb::default()),
         }
-    }
-}
-
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct DummyConfig(bool);
-
-impl Config for DummyConfig {
-    fn path() -> &'static str {
-        "dummy_config.json"
-    }
-
-    fn gui(&mut self, ui: &mut egui::Ui) {
-        ui.checkbox(&mut self.0, "checkbox that does nothing");
-    }
-
-    fn load() -> Result<Self> {
-        Ok(Self(false))
-    }
-
-    fn save(&self) -> Result<()> {
-        Ok(())
     }
 }

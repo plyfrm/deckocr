@@ -28,7 +28,15 @@ fn main() -> Result<()> {
     // TODO: graceful error handling in main
     eframe::run_native(
         "app_name",
-        Default::default(),
+        eframe::NativeOptions {
+            window_builder: Some(Box::new(|builder| egui::ViewportBuilder {
+                inner_size: Some(vec2(400.0, 600.0)),
+                min_inner_size: Some(vec2(400.0, 200.0)),
+                max_inner_size: Some(vec2(400.0, 800.0)),
+                ..builder
+            })),
+            ..Default::default()
+        },
         Box::new(|cc| {
             EframeApp::new(cc)
                 .map(|app| -> Box<dyn eframe::App> { Box::new(app) })
@@ -188,11 +196,15 @@ impl eframe::App for EframeApp {
                 egui::ViewportId(egui::Id::new("ocr_viewport")),
                 egui::ViewportBuilder {
                     inner_size: Some(size),
+                    // FIXME: window isn't fullscreen while ocrwindow is loading on steam deck for some reason
                     fullscreen: Some(self.config.fullscreen),
                     ..Default::default()
                 },
                 |ctx, _| {
                     if let Some((texture, _)) = &self.ocr_window_loading {
+                        // FIXME: doesn't bring the window into focus if a previous one was already open
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+
                         egui::CentralPanel::default().show(ctx, |ui| {
                             fill_texture(ctx, ui, texture);
                             ui.centered_and_justified(|ui| {
@@ -224,62 +236,42 @@ impl eframe::App for EframeApp {
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            egui_extras::StripBuilder::new(ui)
-                .size(egui_extras::Size::remainder())
-                .size(egui_extras::Size::exact(32.0))
-                .vertical(|mut strip| {
-                    strip.cell(|ui| {
-                        egui::ScrollArea::vertical().show(ui, |ui| {
-                            let header_size = 24.0;
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                let header_size = 24.0;
 
-                            ui.label(
-                                egui::RichText::new(concat!(
-                                    env!("CARGO_PKG_NAME"),
-                                    " Configuration"
-                                ))
-                                .size(header_size)
-                                .strong(),
-                            );
+                ui.label(
+                    egui::RichText::new(concat!(env!("CARGO_PKG_NAME"), " Configuration"))
+                        .size(header_size)
+                        .strong(),
+                );
 
-                            self.config.gui(ui);
+                self.config.gui(ui);
 
-                            ui.separator();
+                ui.separator();
 
-                            let ocr_name = self.services.ocr(|ocr| ocr.name());
-                            let dictionary_name =
-                                self.services.dictionary(|dictionary| dictionary.name());
+                let ocr_name = self.services.ocr(|ocr| ocr.name());
+                let dictionary_name = self.services.dictionary(|dictionary| dictionary.name());
 
-                            egui::CollapsingHeader::new(
-                                egui::RichText::new(format!("OCR: {ocr_name}")).size(header_size),
-                            )
-                            .default_open(true)
-                            .show_unindented(ui, |ui| {
-                                self.services.ocr(|ocr| ocr.config_gui(ui));
-                            });
-
-                            ui.separator();
-
-                            egui::CollapsingHeader::new(
-                                egui::RichText::new(format!("Dictionary: {dictionary_name}",))
-                                    .size(header_size),
-                            )
-                            .default_open(true)
-                            .show_unindented(ui, |ui| {
-                                self.services
-                                    .dictionary(|dictionary| dictionary.config_gui(ui));
-                            });
-                        });
-                    });
-
-                    strip.cell(|ui| {
-                        ui.centered_and_justified(|ui| {
-                            ui.add(
-                                egui::Button::new("Apply Changes").min_size(ui.available_size()),
-                            );
-                        });
-                        // TODO: restart the app when clicked
-                    });
+                egui::CollapsingHeader::new(
+                    egui::RichText::new(format!("OCR: {ocr_name}")).size(header_size),
+                )
+                .default_open(true)
+                .show_unindented(ui, |ui| {
+                    self.services.ocr(|ocr| ocr.config_gui(ui));
                 });
+
+                ui.separator();
+
+                egui::CollapsingHeader::new(
+                    egui::RichText::new(format!("Dictionary: {dictionary_name}",))
+                        .size(header_size),
+                )
+                .default_open(true)
+                .show_unindented(ui, |ui| {
+                    self.services
+                        .dictionary(|dictionary| dictionary.config_gui(ui));
+                });
+            });
         });
     }
 }

@@ -1,4 +1,4 @@
-use anyhow::anyhow;
+use anyhow::{anyhow, Result};
 use eframe::egui;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -7,11 +7,11 @@ use crate::{
     config::Config,
     service::{
         dictionary::{Definition, TextFragment, TextWithRuby, Word},
-        Service, ServiceJob,
+        ServiceJob,
     },
 };
 
-use super::{DictionaryInput, DictionaryOutput};
+use super::DictionaryService;
 
 const API_URL_PARSE: &'static str = "https://jpdb.io/api/v1/parse";
 
@@ -52,7 +52,7 @@ impl Config for JpdbDictionaryConfig {
     }
 }
 
-impl Service<DictionaryInput, DictionaryOutput> for JpdbDictionary {
+impl DictionaryService for JpdbDictionary {
     fn init(&mut self) -> anyhow::Result<()> {
         self.config = JpdbDictionaryConfig::load()?;
         Ok(())
@@ -67,7 +67,7 @@ impl Service<DictionaryInput, DictionaryOutput> for JpdbDictionary {
         self.config.show_ui(ui);
     }
 
-    fn call(&mut self, text: DictionaryInput) -> crate::service::ServiceJob<DictionaryOutput> {
+    fn parse(&mut self, text: Vec<String>) -> ServiceJob<Result<Vec<Vec<Word>>>> {
         let config = self.config.clone();
 
         ServiceJob::new(move || {

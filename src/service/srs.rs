@@ -1,16 +1,15 @@
 use anyhow::Result;
+use eframe::egui;
 
-use super::{dictionary::Word, Service, ServiceJob};
+use super::{dictionary::Word, ServiceJob};
 
 pub mod jpdb_srs;
 
-pub type SrsInput = Word;
-pub type SrsOutput = Result<()>;
+pub trait SrsService {
+    fn init(&mut self) -> Result<()>;
+    fn terminate(&mut self) -> Result<()>;
 
-pub trait SrsService: Service<SrsInput, SrsOutput> {
-    fn add_to_deck(&mut self, word: SrsInput) -> ServiceJob<SrsOutput> {
-        self.call(word)
-    }
+    fn show_config_ui(&mut self, ui: &mut egui::Ui);
+
+    fn add_to_deck(&mut self, word: &Word) -> ServiceJob<Result<()>>;
 }
-
-impl<T> SrsService for T where T: Service<SrsInput, SrsOutput> {}

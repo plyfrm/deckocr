@@ -4,9 +4,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::config::Config;
-use crate::service::{Service, ServiceJob};
+use crate::service::dictionary::Word;
+use crate::service::ServiceJob;
 
-use super::{SrsInput, SrsOutput};
+use super::SrsService;
 
 // This file only contains the code for using jpdb as an SRS. For jpdb configuration and other
 // jpdb features, see `service/dictionary/jpdb.rs`.
@@ -42,7 +43,7 @@ impl Config for JpdbSrsConfig {
     }
 }
 
-impl Service<SrsInput, SrsOutput> for JpdbSrs {
+impl SrsService for JpdbSrs {
     fn init(&mut self) -> Result<()> {
         self.config = JpdbSrsConfig::load()?;
         Ok(())
@@ -57,13 +58,15 @@ impl Service<SrsInput, SrsOutput> for JpdbSrs {
         self.config.show_ui(ui);
     }
 
-    fn call(&mut self, word: SrsInput) -> crate::service::ServiceJob<SrsOutput> {
+    fn add_to_deck(&mut self, word: &Word) -> ServiceJob<Result<()>> {
         let config = self.config.clone();
 
         let spelling = word
             .definition
+            .as_ref()
             .expect("the user should not be able to add words with no definitions to a deck")
-            .spelling;
+            .spelling
+            .clone();
 
         ServiceJob::new(move || {
             let json: Value = attohttpc::post(API_URL_PARSE)

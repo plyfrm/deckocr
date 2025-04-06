@@ -2,7 +2,6 @@ use std::thread::JoinHandle;
 
 use anyhow::{anyhow, Result};
 use dictionary::DictionaryService;
-use eframe::egui;
 use ocr::OcrService;
 use srs::SrsService;
 
@@ -46,15 +45,6 @@ impl Drop for Services {
             .terminate()
             .expect("Failed to terminate SRS Service");
     }
-}
-
-pub trait Service<I, O> {
-    fn init(&mut self) -> Result<()>;
-    fn terminate(&mut self) -> Result<()>;
-
-    fn show_config_ui(&mut self, ui: &mut egui::Ui);
-
-    fn call(&mut self, input: I) -> ServiceJob<O>;
 }
 
 pub struct ServiceJob<T> {

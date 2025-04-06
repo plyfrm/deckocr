@@ -1,15 +1,13 @@
 use std::io::Cursor;
 
+use anyhow::Result;
 use eframe::egui;
-use image::ImageFormat;
+use image::{ImageFormat, RgbaImage};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    config::Config,
-    service::{Service, ServiceJob},
-};
+use crate::{config::Config, service::ServiceJob};
 
-use super::{OcrInput, OcrOutput, OcrResponse};
+use super::{OcrResponse, OcrService};
 
 #[derive(Default)]
 pub struct Owocr {
@@ -49,7 +47,7 @@ impl Config for OwocrConfig {
     }
 }
 
-impl Service<OcrInput, OcrOutput> for Owocr {
+impl OcrService for Owocr {
     fn init(&mut self) -> anyhow::Result<()> {
         self.config = OwocrConfig::load()?;
         Ok(())
@@ -64,12 +62,12 @@ impl Service<OcrInput, OcrOutput> for Owocr {
         self.config.show_ui(ui);
     }
 
-    fn call(&mut self, input: OcrInput) -> crate::service::ServiceJob<OcrOutput> {
+    fn ocr(&mut self, image: RgbaImage) -> ServiceJob<Result<OcrResponse>> {
         let addr = format!("ws://{}:{}", self.config.address, self.config.port);
 
         ServiceJob::new(move || {
             let mut buf = Cursor::new(Vec::new());
-            input.write_to(&mut buf, ImageFormat::Png)?;
+            image.write_to(&mut buf, ImageFormat::Png)?;
 
             let (mut socket, _) = tungstenite::connect(addr)?;
 

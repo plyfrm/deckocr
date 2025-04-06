@@ -123,7 +123,7 @@ impl Config for AppConfig {
                 Some(self.hotkey_modifiers),
                 self.hotkey_keycode,
             )
-            .to_string();
+            .to_string().to_uppercase();
 
             ui.horizontal(|ui| {
                 ui.label("OCR Hotkey: ");

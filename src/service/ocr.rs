@@ -1,23 +1,23 @@
 use anyhow::Result;
-use eframe::egui::Rect;
+use eframe::egui::{self, Rect};
 use image::RgbaImage;
 
-use super::{Service, ServiceJob};
+use super::ServiceJob;
 
 pub mod owocr;
 
-pub type OcrInput = RgbaImage;
-pub type OcrOutput = Result<OcrResponse>;
+pub type OcrServiceJob = ServiceJob<Result<OcrResponse>>;
+
+pub trait OcrService {
+    fn init(&mut self) -> Result<()>;
+    fn terminate(&mut self) -> Result<()>;
+
+    fn show_config_ui(&mut self, ui: &mut egui::Ui);
+
+    fn ocr(&mut self, image: RgbaImage) -> OcrServiceJob;
+}
 
 pub enum OcrResponse {
     WithRects(Vec<(Rect, String)>),
     WithoutRects(Vec<String>),
 }
-
-pub trait OcrService: Service<OcrInput, OcrOutput> {
-    fn ocr(&mut self, input: OcrInput) -> ServiceJob<OcrOutput> {
-        self.call(input)
-    }
-}
-
-impl<T> OcrService for T where T: Service<OcrInput, OcrOutput> {}

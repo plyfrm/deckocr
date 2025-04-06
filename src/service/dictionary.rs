@@ -1,19 +1,20 @@
 use anyhow::Result;
+use eframe::egui;
 
-use super::{Service, ServiceJob};
+use super::ServiceJob;
 
 pub mod jpdb_dictionary;
 
-pub type DictionaryInput = Vec<String>;
-pub type DictionaryOutput = Result<Vec<Vec<Word>>>;
+pub type DictionaryServiceJob = ServiceJob<Result<Vec<Vec<Word>>>>;
 
-pub trait DictionaryService: Service<DictionaryInput, DictionaryOutput> {
-    fn parse(&mut self, text: DictionaryInput) -> ServiceJob<DictionaryOutput> {
-        self.call(text)
-    }
+pub trait DictionaryService {
+    fn init(&mut self) -> Result<()>;
+    fn terminate(&mut self) -> Result<()>;
+
+    fn show_config_ui(&mut self, ui: &mut egui::Ui);
+
+    fn parse(&mut self, paragraphs: Vec<String>) -> DictionaryServiceJob;
 }
-
-impl<T> DictionaryService for T where T: Service<DictionaryInput, DictionaryOutput> {}
 
 #[derive(Debug, Clone)]
 pub struct Word {

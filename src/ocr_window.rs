@@ -10,9 +10,9 @@ use image::RgbaImage;
 use crate::{
     config::AppConfig,
     service::{
-        dictionary::{DictionaryOutput, TextWithRuby, Word},
-        ocr::{OcrOutput, OcrResponse},
-        ServiceJob, Services,
+        dictionary::{DictionaryServiceJob, TextWithRuby, Word},
+        ocr::{OcrResponse, OcrServiceJob},
+        Services,
     },
     Errors,
 };
@@ -34,8 +34,8 @@ pub struct OcrWindow {
 }
 
 pub enum State {
-    LoadingOcr(ServiceJob<OcrOutput>),
-    LoadingDictionary(ServiceJob<DictionaryOutput>),
+    LoadingOcr(OcrServiceJob),
+    LoadingDictionary(DictionaryServiceJob),
     Ready(Ready),
 }
 
@@ -362,7 +362,7 @@ impl OcrWindow {
         if add_to_deck {
             let word = state.words[state.selected_word.0][state.selected_word.1].clone();
 
-            services.srs.add_to_deck(word).wait()??;
+            services.srs.add_to_deck(&word).wait()??;
 
             state
                 .selected_word_mut()

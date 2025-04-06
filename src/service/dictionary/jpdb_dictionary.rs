@@ -16,21 +16,33 @@ use super::{DictionaryInput, DictionaryOutput};
 const API_URL_PARSE: &'static str = "https://jpdb.io/api/v1/parse";
 
 #[derive(Default)]
-pub struct Jpdb {
-    pub config: JpdbConfig,
+pub struct JpdbDictionary {
+    pub config: JpdbDictionaryConfig,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct JpdbConfig {
+pub struct JpdbDictionaryConfig {
     pub api_key: String,
-    pub deck_id: u64,
     pub filter_paragraphs_with_no_definitions: bool,
 }
 
-impl JpdbConfig {
-    pub fn dictionary_config_ui(&mut self, ui: &mut egui::Ui) {
+impl Default for JpdbDictionaryConfig {
+    fn default() -> Self {
+        Self {
+            api_key: "".to_owned(),
+            filter_paragraphs_with_no_definitions: true,
+        }
+    }
+}
+
+impl Config for JpdbDictionaryConfig {
+    fn path() -> &'static str {
+        "dictionary_services/jpdb.json"
+    }
+
+    fn show_ui(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.label("API Key: ");
+            ui.label("API Key:");
             ui.text_edit_singleline(&mut self.api_key);
         });
         ui.checkbox(
@@ -38,43 +50,11 @@ impl JpdbConfig {
             "Filter out paragraphs with no definitions",
         );
     }
-
-    pub fn srs_config_ui(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.label("API Key: ");
-            ui.text_edit_singleline(&mut self.api_key);
-        });
-        ui.add(
-            egui::DragValue::new(&mut self.deck_id)
-                .speed(1)
-                .prefix("Mining Deck ID: "),
-        );
-    }
 }
 
-impl Default for JpdbConfig {
-    fn default() -> Self {
-        Self {
-            api_key: "".to_owned(),
-            deck_id: 0,
-            filter_paragraphs_with_no_definitions: true,
-        }
-    }
-}
-
-impl Config for JpdbConfig {
-    fn path() -> &'static str {
-        "dictionary_services/jpdb.json"
-    }
-
-    fn show_ui(&mut self, _ui: &mut egui::Ui) {
-        panic!("Please call the specialised functions for showing the jpdb config ui.");
-    }
-}
-
-impl Service<DictionaryInput, DictionaryOutput> for Jpdb {
+impl Service<DictionaryInput, DictionaryOutput> for JpdbDictionary {
     fn init(&mut self) -> anyhow::Result<()> {
-        self.config = JpdbConfig::load()?;
+        self.config = JpdbDictionaryConfig::load()?;
         Ok(())
     }
 
@@ -84,7 +64,7 @@ impl Service<DictionaryInput, DictionaryOutput> for Jpdb {
     }
 
     fn show_config_ui(&mut self, ui: &mut egui::Ui) {
-        self.config.dictionary_config_ui(ui);
+        self.config.show_ui(ui);
     }
 
     fn call(&mut self, text: DictionaryInput) -> crate::service::ServiceJob<DictionaryOutput> {

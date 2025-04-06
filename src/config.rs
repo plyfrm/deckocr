@@ -6,9 +6,9 @@ use global_hotkey::hotkey;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::service::{
-    dictionary::{jpdb::Jpdb, DictionaryService},
+    dictionary::{jpdb_dictionary::JpdbDictionary, DictionaryService},
     ocr::{owocr::Owocr, OcrService},
-    srs::SrsService,
+    srs::{jpdb_srs::JpdbSrs, SrsService},
 };
 
 // TODO: fix config issues
@@ -129,58 +129,66 @@ impl Config for AppConfig {
                 ui.label("OCR Hotkey: ");
                 ui.text_edit_singleline(&mut hotkey);
             });
-        });
+        }).response.on_disabled_hover_text(format!("Listening for a new hotkey is not currently supported. You can set your hotkey manually by editing {}", match std::env::consts::OS {
+            "linux" => "`~/.config/deckocr/config.json`.",
+            "windows" => "`%APPDATA%/deckocr/config.json`.",
+            _ => "`deckocr/config.json` in your config directory."
+        }));
 
         ui.add_space(spacing);
 
         egui::ComboBox::from_label("OCR Service")
-            .selected_text(format!("{:?}", self.ocr_service))
+            .selected_text(self.ocr_service.name())
             .show_ui(ui, |ui| {
-                ui.selectable_value(&mut self.ocr_service, OcrServiceList::Owocr, "owocr");
+                for service in OcrServiceList::ALL {
+                    ui.selectable_value(&mut self.ocr_service, *service, service.name());
+                }
             });
 
         egui::ComboBox::from_label("Dictionary Service")
-            .selected_text(format!("{:?}", self.dictionary_service))
+            .selected_text(self.dictionary_service.name())
             .show_ui(ui, |ui| {
-                ui.selectable_value(
-                    &mut self.dictionary_service,
-                    DictionaryServiceList::Jpdb,
-                    "jpdb",
-                );
+                for service in DictionaryServiceList::ALL {
+                    ui.selectable_value(&mut self.dictionary_service, *service, service.name());
+                }
             });
 
         egui::ComboBox::from_label("SRS Service")
-            .selected_text(format!("{:?}", self.srs_service))
+            .selected_text(self.srs_service.name())
             .show_ui(ui, |ui| {
-                ui.selectable_value(&mut self.srs_service, SrsServiceList::Jpdb, "jpdb");
+                for service in SrsServiceList::ALL {
+                    ui.selectable_value(&mut self.srs_service, *service, service.name());
+                }
             });
 
         ui.add_space(spacing);
 
-        ui.add(
-            egui::DragValue::new(&mut self.zoom_factor)
-                .prefix("UI Scaling: ")
-                .range(0.5..=2.0)
-                .speed(0.01)
-                .custom_formatter(|n, _| format!("{}%", (n * 100.0) as i32))
-                .custom_parser(|s| {
-                    s.trim_end_matches('%')
-                        .parse::<f64>()
-                        .ok()
-                        .map(|n| n / 100.0)
-                }),
-        );
-
-        ui.checkbox(&mut self.fullscreen, "Fullscreen");
+        ui.horizontal(|ui| {
+            ui.label("UI Scale:");
+            egui::ComboBox::from_id_salt("UI Scale ComboBox")
+                .selected_text(format!("{}%", (self.zoom_factor * 100.0) as i32))
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.zoom_factor, 0.5, "50%");
+                    ui.selectable_value(&mut self.zoom_factor, 0.75, "75%");
+                    ui.selectable_value(&mut self.zoom_factor, 1.0, "100%");
+                    ui.selectable_value(&mut self.zoom_factor, 1.5, "150%");
+                    ui.selectable_value(&mut self.zoom_factor, 2.0, "200%");
+                });
+        });
 
         ui.horizontal(|ui| {
-            ui.label("Window Size: ");
+            ui.label("Fullscreen:");
+            ui.add(egui::Checkbox::without_text(&mut self.fullscreen));
+        });
+
+        ui.horizontal(|ui| {
+            ui.label("Window Size:");
             ui.add(
                 egui::DragValue::new(&mut self.window_width)
                     .range(640..=3840)
                     .speed(1),
             );
-            ui.label("x");
+            ui.label("×");
             ui.add(
                 egui::DragValue::new(&mut self.window_height)
                     .range(480..=2160)
@@ -234,6 +242,8 @@ pub enum OcrServiceList {
 }
 
 impl OcrServiceList {
+    pub const ALL: &'static [Self] = &[Self::Owocr];
+
     pub fn name(&self) -> &str {
         match self {
             Self::Owocr => "owocr",
@@ -253,6 +263,8 @@ pub enum DictionaryServiceList {
 }
 
 impl DictionaryServiceList {
+    pub const ALL: &'static [Self] = &[Self::Jpdb];
+
     pub fn name(&self) -> &str {
         match self {
             Self::Jpdb => "jpdb",
@@ -261,7 +273,7 @@ impl DictionaryServiceList {
 
     pub fn create_service(&self) -> Box<dyn DictionaryService> {
         match self {
-            Self::Jpdb => Box::new(Jpdb::default()),
+            Self::Jpdb => Box::new(JpdbDictionary::default()),
         }
     }
 }
@@ -272,6 +284,8 @@ pub enum SrsServiceList {
 }
 
 impl SrsServiceList {
+    pub const ALL: &'static [Self] = &[Self::Jpdb];
+
     pub fn name(&self) -> &str {
         match self {
             Self::Jpdb => "jpdb",
@@ -280,7 +294,7 @@ impl SrsServiceList {
 
     pub fn create_service(&self) -> Box<dyn SrsService> {
         match self {
-            Self::Jpdb => Box::new(Jpdb::default()),
+            Self::Jpdb => Box::new(JpdbSrs::default()),
         }
     }
 }

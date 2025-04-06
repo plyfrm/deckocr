@@ -146,6 +146,7 @@ impl eframe::App for EframeApp {
         let mut ocr_window_close_requested = false;
 
         if let Some(ocr_window) = &mut self.ocr_window {
+            // FIXME: this needs to be fully closed for at least one frame or we can't get focus back when OCR is triggered
             ctx.show_viewport_immediate(
                 egui::ViewportId(egui::Id::new("ocr_viewport")),
                 egui::ViewportBuilder {

@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use super::{Service, ServiceJob};
 
-pub mod jpdb;
+pub mod jpdb_dictionary;
 
 pub type DictionaryInput = Vec<String>;
 pub type DictionaryOutput = Result<Vec<Vec<Word>>>;

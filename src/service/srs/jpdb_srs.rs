@@ -1,10 +1,10 @@
 use anyhow::{anyhow, Result};
+use eframe::egui;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::config::Config;
-use crate::service::dictionary::jpdb::JpdbConfig;
-use crate::service::ServiceJob;
-use crate::service::{dictionary::jpdb::Jpdb, Service};
+use crate::service::{Service, ServiceJob};
 
 use super::{SrsInput, SrsOutput};
 
@@ -14,9 +14,37 @@ use super::{SrsInput, SrsOutput};
 const API_URL_PARSE: &'static str = "https://jpdb.io/api/v1/parse";
 const API_URL_ADD_TO_DECK: &'static str = "https://jpdb.io/api/v1/deck/add-vocabulary";
 
-impl Service<SrsInput, SrsOutput> for Jpdb {
+#[derive(Default)]
+pub struct JpdbSrs {
+    config: JpdbSrsConfig,
+}
+
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct JpdbSrsConfig {
+    pub api_key: String,
+    pub mining_deck_id: u64,
+}
+
+impl Config for JpdbSrsConfig {
+    fn path() -> &'static str {
+        "srs/jpdb.json"
+    }
+
+    fn show_ui(&mut self, ui: &mut eframe::egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("API Key:");
+            ui.text_edit_singleline(&mut self.api_key);
+        });
+        ui.horizontal(|ui| {
+            ui.label("Mining Deck ID:");
+            ui.add(egui::DragValue::new(&mut self.mining_deck_id));
+        });
+    }
+}
+
+impl Service<SrsInput, SrsOutput> for JpdbSrs {
     fn init(&mut self) -> Result<()> {
-        self.config = JpdbConfig::load()?;
+        self.config = JpdbSrsConfig::load()?;
         Ok(())
     }
 
@@ -26,7 +54,7 @@ impl Service<SrsInput, SrsOutput> for Jpdb {
     }
 
     fn show_config_ui(&mut self, ui: &mut eframe::egui::Ui) {
-        self.config.srs_config_ui(ui);
+        self.config.show_ui(ui);
     }
 
     fn call(&mut self, word: SrsInput) -> crate::service::ServiceJob<SrsOutput> {
@@ -74,7 +102,7 @@ impl Service<SrsInput, SrsOutput> for Jpdb {
             attohttpc::post(API_URL_ADD_TO_DECK)
                 .bearer_auth(&config.api_key)
                 .json(&json!({
-                    "id": config.deck_id,
+                    "id": config.mining_deck_id,
                     "vocabulary": [[vid, sid]],
                     "occurences": [1],
                     "replace_existing_occurences": true

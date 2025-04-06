@@ -56,6 +56,16 @@ pub struct Ready {
     pub scroll_to_current_word_requested: bool,
 }
 
+impl Ready {
+    pub fn selected_word(&self) -> &Word {
+        &self.words[self.selected_word.0][self.selected_word.1]
+    }
+
+    pub fn selected_word_mut(&mut self) -> &mut Word {
+        &mut self.words[self.selected_word.0][self.selected_word.1]
+    }
+}
+
 impl OcrWindow {
     pub fn new(
         ctx: &egui::Context,
@@ -162,6 +172,7 @@ impl OcrWindow {
 
     // TODO: controller input
     // TODO: allow scrolling the text and definition panes
+    // TODO: clean up that whole function tbh
     fn handle_input(&mut self, ctx: &egui::Context, services: &mut Services) -> Result<()> {
         let State::Ready(state) = &mut self.state else {
             panic!("invariant broken: handle_input should only be called when self.state is Some!");
@@ -316,7 +327,8 @@ impl OcrWindow {
 
             services.srs.add_to_deck(word).wait()??;
 
-            state.words[state.selected_word.0][state.selected_word.1]
+            state
+                .selected_word_mut()
                 .definition
                 .as_mut()
                 .unwrap()
@@ -440,7 +452,7 @@ impl OcrWindow {
                 panic!("invariant broken: show_without_rects should only be called when self.state is Some!");
             };
 
-            match &state.words[state.selected_word.0][state.selected_word.1].definition {
+            match &state.selected_word().definition {
                 None => {}
                 Some(word) => {
                     let spelling_size = 64.0;

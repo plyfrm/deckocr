@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use super::{dictionary::Word, Service, ServiceJob};
 
-pub mod jpdb;
+pub mod jpdb_srs;
 
 pub type SrsInput = Word;
 pub type SrsOutput = Result<()>;

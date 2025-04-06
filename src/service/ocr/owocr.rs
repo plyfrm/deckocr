@@ -39,10 +39,13 @@ impl Config for OwocrConfig {
     fn show_ui(&mut self, ui: &mut egui::Ui) {
         ui.label("Make sure you start owocr separately!");
         ui.horizontal(|ui| {
-            ui.label("Address: ");
+            ui.label("Address:");
             ui.text_edit_singleline(&mut self.address);
         });
-        ui.add(egui::DragValue::new(&mut self.port).prefix("Port: "));
+        ui.horizontal(|ui| {
+            ui.label("Port:");
+            ui.add(egui::DragValue::new(&mut self.port));
+        });
     }
 }
 

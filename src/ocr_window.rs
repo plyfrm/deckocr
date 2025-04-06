@@ -14,7 +14,7 @@ use crate::{
         ocr::{OcrResponse, OcrServiceJob},
         Services,
     },
-    Errors,
+    Errors, WINDOW_TITLE,
 };
 
 /// Holding the skip button will automatically skip to those words
@@ -107,14 +107,14 @@ impl OcrWindow {
     pub fn manage_loading(&mut self, services: &mut Services) -> Result<()> {
         match &mut self.state {
             State::Ready(_) => {}
-            State::LoadingOcr(job) => match job.try_wait()?.transpose()? {
+            State::LoadingOcr(job) => match job.try_wait().unwrap().transpose()? {
                 None => {}
                 Some(OcrResponse::WithRects(_)) => unimplemented!(),
                 Some(OcrResponse::WithoutRects(text)) => {
                     self.state = State::LoadingDictionary(services.dictionary.parse(text));
                 }
             },
-            State::LoadingDictionary(job) => match job.try_wait()?.transpose()? {
+            State::LoadingDictionary(job) => match job.try_wait().unwrap().transpose()? {
                 None => {}
                 Some(words) => {
                     // set selected word to the first word with a definition
@@ -149,6 +149,9 @@ impl OcrWindow {
     ) {
         if let Err(e) = self.manage_loading(services) {
             errors.push(e);
+            // we need to close the ocr window immediately when this errors, or we'll keep attempting to wait
+            // on service jobs which have already finished with an error
+            self.close_requested = true;
         }
 
         // NOTE: the viewport needs to be fully closed for at least 1 frame or we aren't
@@ -161,6 +164,7 @@ impl OcrWindow {
         ctx.show_viewport_immediate(
             egui::ViewportId(egui::Id::new("ocr_viewport")),
             egui::ViewportBuilder {
+                title: Some(WINDOW_TITLE.to_owned()),
                 inner_size: match self.config.fullscreen {
                     true => Some(self.texture.size_vec2()),
                     false => Some(vec2(
@@ -177,7 +181,17 @@ impl OcrWindow {
                 }
 
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    fill_texture(ctx, ui, &self.texture);
+                    ui.painter().image(
+                        self.texture.id(),
+                        ctx.available_rect(),
+                        Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
+                        Color32::WHITE,
+                    );
+                    ui.painter().rect_filled(
+                        ctx.available_rect(),
+                        CornerRadius::ZERO,
+                        Color32::from_black_alpha(self.config.background_dimming),
+                    );
 
                     if self.state.is_loading() {
                         ui.centered_and_justified(|ui| {
@@ -688,14 +702,4 @@ impl<'a> Widget for TextWithRubyWidget<'a> {
     }
 }
 
-pub fn fill_texture(ctx: &egui::Context, ui: &mut egui::Ui, texture: &TextureHandle) {
-    let rect = ctx.available_rect();
-    ui.painter().image(
-        texture.id(),
-        rect,
-        Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
-        Color32::WHITE,
-    );
-    ui.painter()
-        .rect_filled(rect, CornerRadius::ZERO, Color32::from_black_alpha(224));
-}
+pub fn fill_texture(ctx: &egui::Context, ui: &mut egui::Ui, texture: &TextureHandle) {}

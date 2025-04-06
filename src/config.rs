@@ -105,8 +105,35 @@ pub struct AppConfig {
     pub fullscreen: bool,
     pub window_width: u32,
     pub window_height: u32,
+    pub background_dimming: u8,
 
     pub card_colours: HashMap<String, [u8; 3]>,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        let mut card_colours = HashMap::new();
+        for (card_state, srgb) in CARD_STATE_DEFAULTS {
+            card_colours.insert((*card_state).to_owned(), *srgb);
+        }
+
+        Self {
+            hotkey_modifiers: hotkey::Modifiers::ALT,
+            hotkey_keycode: hotkey::Code::F12,
+
+            ocr_service: OcrServiceList::Owocr,
+            dictionary_service: DictionaryServiceList::Jpdb,
+            srs_service: SrsServiceList::Jpdb,
+
+            zoom_factor: 1.0,
+            fullscreen: true,
+            window_width: 1280,
+            window_height: 720,
+            background_dimming: 204,
+
+            card_colours,
+        }
+    }
 }
 
 impl Config for AppConfig {
@@ -196,6 +223,20 @@ impl Config for AppConfig {
             );
         });
 
+        ui.horizontal(|ui| {
+            ui.label("Background Dimming:");
+            ui.add(
+                egui::DragValue::new(&mut self.background_dimming)
+                    .custom_formatter(|n, _| format!("{}%", (n / 255.0 * 100.0) as i32))
+                    .custom_parser(|s| {
+                        s.trim_end_matches('%')
+                            .parse()
+                            .ok()
+                            .map(|n: f64| n * 255.0 / 100.0)
+                    }),
+            );
+        });
+
         ui.add_space(spacing);
 
         ui.collapsing("Word Colours", |ui| {
@@ -208,31 +249,6 @@ impl Config for AppConfig {
                 }
             }
         });
-    }
-}
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        let mut card_colours = HashMap::new();
-        for (card_state, srgb) in CARD_STATE_DEFAULTS {
-            card_colours.insert((*card_state).to_owned(), *srgb);
-        }
-
-        Self {
-            hotkey_modifiers: hotkey::Modifiers::ALT,
-            hotkey_keycode: hotkey::Code::F12,
-
-            ocr_service: OcrServiceList::Owocr,
-            dictionary_service: DictionaryServiceList::Jpdb,
-            srs_service: SrsServiceList::Jpdb,
-
-            zoom_factor: 1.0,
-            fullscreen: true,
-            window_width: 1280,
-            window_height: 720,
-
-            card_colours,
-        }
     }
 }
 

@@ -2,20 +2,23 @@ use core::f32;
 use std::collections::HashMap;
 
 use anyhow::Result;
-use eframe::egui::{
-    self, vec2, Color32, CornerRadius, Pos2, Rect, TextureHandle, ViewportInfo, Widget,
-};
+use eframe::egui::{self, vec2, Color32, CornerRadius, Pos2, Rect, TextureHandle, Widget};
 use egui_extras::Size;
 use gilrs::Gilrs;
+use image::RgbaImage;
 
 use crate::{
     config::AppConfig,
-    dictionary_service::{TextWithRuby, Word},
-    Errors, ServiceManager,
+    service::{
+        dictionary::{DictionaryOutput, TextWithRuby, Word},
+        ocr::{OcrOutput, OcrResponse},
+        ServiceJob, Services,
+    },
+    Errors,
 };
 
 /// Holding the skip button will automatically skip to those words
-const RELEVANT_CARD_STATES: &[&str] = &["not in deck", "new", "due", "failed"];
+const RELEVANT_CARD_STATES: &[&str] = &["not in deck", "new", "learning", "due", "failed"];
 
 pub struct OcrWindow {
     pub should_close: bool,
@@ -24,28 +27,59 @@ pub struct OcrWindow {
     pub config: AppConfig,
     pub gilrs: Gilrs,
 
-    pub words: Vec<(Rect, Vec<Word>)>,
+    // still loading if some
+    pub state: State,
 
+    pub first_frame: bool,
+}
+
+pub enum State {
+    LoadingOcr(ServiceJob<OcrOutput>),
+    LoadingDictionary(ServiceJob<DictionaryOutput>),
+    Ready(Ready),
+}
+
+impl State {
+    pub fn is_loading(&self) -> bool {
+        match self {
+            Self::LoadingOcr(_) | Self::LoadingDictionary(_) => true,
+            Self::Ready(_) => false,
+        }
+    }
+}
+
+pub struct Ready {
+    pub words: Vec<Vec<Word>>,
     pub word_rects: HashMap<(usize, usize), Rect>, // used for finding next word on user input
+
     pub selected_word: (usize, usize),
+    pub scroll_to_current_word_requested: bool,
 }
 
 impl OcrWindow {
     pub fn new(
+        ctx: &egui::Context,
         config: AppConfig,
-        texture: TextureHandle,
-        words: Vec<(Rect, Vec<Word>)>,
+        image: RgbaImage,
+        services: &mut Services,
     ) -> Result<Self> {
-        // set selected word to the first word with a definition
-        let mut selected_word = (0, 0);
-        'outer: for (i, (_, rect)) in words.iter().enumerate() {
-            for (j, word) in rect.iter().enumerate() {
-                if word.definition.is_some() {
-                    selected_word = (i, j);
-                    break 'outer;
-                }
-            }
-        }
+        let color_image = egui::ColorImage::from_rgba_unmultiplied(
+            [image.width() as usize, image.height() as usize],
+            image.as_flat_samples().as_slice(),
+        );
+
+        let texture = ctx.load_texture(
+            "ocr window background",
+            color_image,
+            egui::TextureOptions {
+                magnification: egui::TextureFilter::Linear,
+                minification: egui::TextureFilter::Linear,
+                wrap_mode: egui::TextureWrapMode::ClampToEdge,
+                mipmap_mode: None,
+            },
+        );
+
+        let state = State::LoadingOcr(services.ocr.ocr(image));
 
         Ok(Self {
             should_close: false,
@@ -54,48 +88,89 @@ impl OcrWindow {
             config,
             gilrs: Gilrs::new().unwrap(),
 
-            words,
+            state,
 
-            word_rects: Default::default(),
-            selected_word,
+            first_frame: true,
         })
     }
 
-    pub fn show(
-        &mut self,
-        ctx: &egui::Context,
-        errors: &mut Errors,
-        services: &mut ServiceManager,
-    ) -> ViewportInfo {
-        let with_rects = *services
-            .exec(|services| services.ocr.supports_text_rects())
-            .finish()
-            .unwrap();
+    pub fn manage_loading(&mut self, services: &mut Services) -> Result<()> {
+        match &mut self.state {
+            State::Ready(_) => {}
+            State::LoadingOcr(job) => match job.try_wait()?.transpose()? {
+                None => {}
+                Some(OcrResponse::WithRects(_)) => unimplemented!(),
+                Some(OcrResponse::WithoutRects(text)) => {
+                    self.state = State::LoadingDictionary(services.dictionary.parse(text));
+                }
+            },
+            State::LoadingDictionary(job) => match job.try_wait()?.transpose()? {
+                None => {}
+                Some(words) => {
+                    // set selected word to the first word with a definition
+                    let mut selected_word = (0, 0);
+                    'outer: for (i, paragraph) in words.iter().enumerate() {
+                        for (j, word) in paragraph.iter().enumerate() {
+                            if word.definition.is_some() {
+                                selected_word = (i, j);
+                                break 'outer;
+                            }
+                        }
+                    }
+                    self.state = State::Ready(Ready {
+                        words,
+                        word_rects: Default::default(),
+                        selected_word,
+                        scroll_to_current_word_requested: false,
+                    });
+                }
+            },
+        }
+
+        Ok(())
+    }
+
+    pub fn show(&mut self, ctx: &egui::Context, errors: &mut Errors, services: &mut Services) {
+        if let Err(e) = self.manage_loading(services) {
+            errors.push(e);
+        }
+
+        if self.first_frame {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
 
         egui::CentralPanel::default().show(ctx, |ui| {
             fill_texture(ctx, ui, &self.texture);
 
-            if with_rects {
-                self.show_with_rects(ui);
+            if self.state.is_loading() {
+                ui.centered_and_justified(|ui| {
+                    ui.add(
+                        egui::Spinner::new()
+                            .color(Color32::from_white_alpha(96))
+                            .size(48.0),
+                    );
+                });
             } else {
                 self.show_without_rects(ui);
+
+                if let Err(e) = self.handle_input(ctx, services) {
+                    errors.push(e);
+                }
             }
         });
-
-        if let Err(e) = self.handle_input(ctx, services) {
-            errors.push(e);
-        }
-
-        ctx.input(|input| input.viewport().clone())
     }
 
     // TODO: controller input
     // TODO: allow scrolling the text and definition panes
-    fn handle_input(&mut self, ctx: &egui::Context, services: &mut ServiceManager) -> Result<()> {
+    fn handle_input(&mut self, ctx: &egui::Context, services: &mut Services) -> Result<()> {
+        let State::Ready(state) = &mut self.state else {
+            panic!("invariant broken: handle_input should only be called when self.state is Some!");
+        };
+
         fn move_h(
             direction: i32,
             selected_word: (usize, usize),
-            words: &Vec<(Rect, Vec<Word>)>,
+            words: &Vec<Vec<Word>>,
             _word_rects: &HashMap<(usize, usize), Rect>,
         ) -> Option<(usize, usize)> {
             let mut cursor = (selected_word.0 as i32, selected_word.1 as i32);
@@ -103,13 +178,13 @@ impl OcrWindow {
                 cursor.1 += direction;
                 if cursor.1 < 0 {
                     cursor.0 = i32::max(0, cursor.0 - 1);
-                    cursor.1 = words[cursor.0 as usize].1.len() as i32 - 1;
-                } else if cursor.1 >= words[cursor.0 as usize].1.len() as i32 {
+                    cursor.1 = words[cursor.0 as usize].len() as i32 - 1;
+                } else if cursor.1 >= words[cursor.0 as usize].len() as i32 {
                     cursor.0 = i32::min(cursor.0 + 1, words.len() as i32 - 1);
                     cursor.1 = 0;
                 }
 
-                if words[cursor.0 as usize].1[cursor.1 as usize]
+                if words[cursor.0 as usize][cursor.1 as usize]
                     .definition
                     .is_some()
                 {
@@ -118,7 +193,7 @@ impl OcrWindow {
 
                 if cursor == (0, 0) {
                     return None;
-                } else if (words.len() - 1, words.last().unwrap().1.len() - 1)
+                } else if (words.len() - 1, words.last().unwrap().len() - 1)
                     == (cursor.0 as usize, cursor.1 as usize)
                 {
                     return None;
@@ -129,7 +204,7 @@ impl OcrWindow {
         fn move_v(
             direction: i32,
             selected_word: (usize, usize),
-            words: &Vec<(Rect, Vec<Word>)>,
+            words: &Vec<Vec<Word>>,
             word_rects: &HashMap<(usize, usize), Rect>,
         ) -> Option<(usize, usize)> {
             let current_rect = word_rects.get(&selected_word).copied().unwrap();
@@ -144,7 +219,7 @@ impl OcrWindow {
 
             word_rects
                 .iter()
-                .filter(|(idx, _)| words[idx.0].1[idx.1].definition.is_some())
+                .filter(|(idx, _)| words[idx.0][idx.1].definition.is_some())
                 .filter(filter)
                 .map(|(idx, rect)| (idx, rect.center().distance(current_rect.center())))
                 .min_by(|(_, dist1), (_, dist2)| dist1.total_cmp(dist2))
@@ -157,23 +232,34 @@ impl OcrWindow {
                                    f: fn(
             i32,
             (usize, usize),
-            &Vec<(Rect, Vec<Word>)>,
+            &Vec<Vec<Word>>,
             &HashMap<(usize, usize), Rect>,
         ) -> Option<(usize, usize)>| {
             if !should_skip {
-                f(direction, self.selected_word, &self.words, &self.word_rects)
-                    .map(|idx| self.selected_word = idx);
+                f(
+                    direction,
+                    state.selected_word,
+                    &state.words,
+                    &state.word_rects,
+                )
+                .map(|idx| state.selected_word = idx);
             } else {
-                let word_count = self.words.iter().map(|(_, v)| v.iter()).flatten().count();
+                // TODO: make vertical skip irrelevant more intuitive
+                let word_count = state.words.iter().map(|v| v.iter()).flatten().count();
                 // NOTE: the upper bound is a workaround for the alg going into an infinite loop sometimes. need to revise this at some point
                 for _ in 0..word_count {
-                    let new = f(direction, self.selected_word, &self.words, &self.word_rects)
-                        .map(|idx| self.selected_word = idx);
+                    let new = f(
+                        direction,
+                        state.selected_word,
+                        &state.words,
+                        &state.word_rects,
+                    )
+                    .map(|idx| state.selected_word = idx);
                     if new.is_none() {
                         break;
                     }
                     if RELEVANT_CARD_STATES.contains(
-                        &self.words[self.selected_word.0].1[self.selected_word.1]
+                        &state.words[state.selected_word.0][state.selected_word.1]
                             .definition
                             .as_ref()
                             .unwrap()
@@ -198,19 +284,24 @@ impl OcrWindow {
         });
 
         let mut add_to_deck = false;
+        state.scroll_to_current_word_requested = false;
 
         ctx.input(|input| {
             if input.key_pressed(egui::Key::ArrowLeft) {
                 skip_irrelevant(should_skip, -1, move_h);
+                state.scroll_to_current_word_requested = true;
             }
             if input.key_pressed(egui::Key::ArrowRight) {
                 skip_irrelevant(should_skip, 1, move_h);
+                state.scroll_to_current_word_requested = true;
             }
             if input.key_pressed(egui::Key::ArrowUp) {
                 skip_irrelevant(should_skip, -1, move_v);
+                state.scroll_to_current_word_requested = true;
             }
             if input.key_pressed(egui::Key::ArrowDown) {
                 skip_irrelevant(should_skip, 1, move_v);
+                state.scroll_to_current_word_requested = true;
             }
             if input.key_pressed(egui::Key::Escape) {
                 self.should_close = true;
@@ -221,14 +312,11 @@ impl OcrWindow {
         });
 
         if add_to_deck {
-            let word = self.words[self.selected_word.0].1[self.selected_word.1].clone();
+            let word = state.words[state.selected_word.0][state.selected_word.1].clone();
 
-            let result = services
-                .exec(move |services| -> Result<()> { services.dictionary.add_to_deck(&word) })
-                .finish()?;
-            (*result)?;
+            services.srs.add_to_deck(word).wait()??;
 
-            self.words[self.selected_word.0].1[self.selected_word.1]
+            state.words[state.selected_word.0][state.selected_word.1]
                 .definition
                 .as_mut()
                 .unwrap()
@@ -238,7 +326,7 @@ impl OcrWindow {
         Ok(())
     }
 
-    fn show_with_rects(&mut self, _ui: &mut egui::Ui) {
+    fn _show_with_rects(&mut self, _ui: &mut egui::Ui) {
         unimplemented!()
     }
 
@@ -279,6 +367,10 @@ impl OcrWindow {
             });
 
         fn text_panel_ui(win: &mut OcrWindow, ui: &mut egui::Ui) {
+            let State::Ready(state) = &mut win.state else {
+                panic!("invariant broken: show_without_rects should only be called when self.state is Some!");
+            };
+
             egui::ScrollArea::vertical().show(ui, |ui| {
                 let text_size = 32.0;
                 let ruby_size = 11.0;
@@ -289,13 +381,13 @@ impl OcrWindow {
 
                 let mut word_rects = HashMap::new();
 
-                for (rect_idx, (_, rect_words)) in win.words.iter().enumerate() {
-                    if rect_idx == win.selected_word.0 {
+                for (paragraph_idx, paragraph) in state.words.iter().enumerate() {
+                    if paragraph_idx == state.selected_word.0 {
                         ui.add_space(paragraph_spacing);
                     }
 
                     ui.horizontal_wrapped(|ui| {
-                        for (word_idx, word) in rect_words.iter().enumerate() {
+                        for (word_idx, word) in paragraph.iter().enumerate() {
                             let colour = word
                                 .definition
                                 .as_ref()
@@ -314,12 +406,14 @@ impl OcrWindow {
                                 })
                                 .rect;
 
-                            if win.word_rects.is_empty() {
-                                word_rects.insert((rect_idx, word_idx), rect);
+                            if state.word_rects.is_empty() {
+                                word_rects.insert((paragraph_idx, word_idx), rect);
                             }
 
-                            if win.selected_word == (rect_idx, word_idx) {
-                                ui.scroll_to_rect(rect, None);
+                            if state.selected_word == (paragraph_idx, word_idx) {
+                                if state.scroll_to_current_word_requested {
+                                    ui.scroll_to_rect(rect, None);
+                                }
                                 ui.painter().rect_filled(
                                     rect,
                                     egui::CornerRadius::ZERO,
@@ -329,20 +423,24 @@ impl OcrWindow {
                         }
                     });
 
-                    if rect_idx == win.selected_word.0 {
+                    if paragraph_idx == state.selected_word.0 {
                         ui.add_space(paragraph_spacing);
                     }
                     ui.add_space(paragraph_spacing);
                 }
 
-                if win.word_rects.is_empty() {
-                    win.word_rects = word_rects;
+                if state.word_rects.is_empty() {
+                    state.word_rects = word_rects;
                 }
             });
         }
 
         fn definition_panel_ui(win: &mut OcrWindow, ui: &mut egui::Ui) {
-            match &win.words[win.selected_word.0].1[win.selected_word.1].definition {
+            let State::Ready(state) = &mut win.state else {
+                panic!("invariant broken: show_without_rects should only be called when self.state is Some!");
+            };
+
+            match &state.words[state.selected_word.0][state.selected_word.1].definition {
                 None => {}
                 Some(word) => {
                     let spelling_size = 64.0;

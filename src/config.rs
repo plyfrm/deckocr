@@ -5,9 +5,10 @@ use eframe::egui;
 use global_hotkey::hotkey;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use crate::{
-    dictionary_service::{jpdb::Jpdb, DictionaryService},
-    ocr_service::{owocr::Owocr, OcrService},
+use crate::service::{
+    dictionary::{jpdb::Jpdb, DictionaryService},
+    ocr::{owocr::Owocr, OcrService},
+    srs::SrsService,
 };
 
 // TODO: fix config issues
@@ -15,16 +16,17 @@ use crate::{
 // when the user changes which services they use
 
 const CARD_STATE_DEFAULTS: &[(&str, [u8; 3])] = &[
-    ("not in deck", [90, 220, 255]),
+    ("not in deck", [0, 200, 255]),
     ("new", [170, 240, 255]),
-    ("due", [255, 100, 90]),
-    ("known", [170, 255, 170]),
+    ("learning", [170, 240, 255]),
+    ("due", [255, 75, 60]),
+    ("known", [125, 255, 125]),
     ("blacklisted", [192, 192, 192]),
 ];
 
 pub trait Config: Serialize + DeserializeOwned + Default {
     fn path() -> &'static str;
-    fn gui(&mut self, ui: &mut egui::Ui);
+    fn show_ui(&mut self, ui: &mut egui::Ui);
 
     /// Loads a configuration file, or creates a default configuration struct if the file does not exist.
     fn load() -> Result<Self> {
@@ -93,12 +95,16 @@ pub struct AppConfig {
     pub hotkey_modifiers: hotkey::Modifiers,
     // https://w3c.github.io/uievents-code/
     pub hotkey_keycode: hotkey::Code,
+
     pub ocr_service: OcrServiceList,
     pub dictionary_service: DictionaryServiceList,
+    pub srs_service: SrsServiceList,
 
     // TODO: window size
     pub zoom_factor: f32,
     pub fullscreen: bool,
+    pub window_width: u32,
+    pub window_height: u32,
 
     pub card_colours: HashMap<String, [u8; 3]>,
 }
@@ -108,7 +114,7 @@ impl Config for AppConfig {
         "config.json"
     }
 
-    fn gui(&mut self, ui: &mut egui::Ui) {
+    fn show_ui(&mut self, ui: &mut egui::Ui) {
         let spacing = 5.0;
 
         // TODO: let the user set the hotkey from the config panel directly
@@ -143,6 +149,12 @@ impl Config for AppConfig {
                 );
             });
 
+        egui::ComboBox::from_label("SRS Service")
+            .selected_text(format!("{:?}", self.srs_service))
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut self.srs_service, SrsServiceList::Jpdb, "jpdb");
+            });
+
         ui.add_space(spacing);
 
         ui.add(
@@ -160,6 +172,21 @@ impl Config for AppConfig {
         );
 
         ui.checkbox(&mut self.fullscreen, "Fullscreen");
+
+        ui.horizontal(|ui| {
+            ui.label("Window Size: ");
+            ui.add(
+                egui::DragValue::new(&mut self.window_width)
+                    .range(640..=3840)
+                    .speed(1),
+            );
+            ui.label("x");
+            ui.add(
+                egui::DragValue::new(&mut self.window_height)
+                    .range(480..=2160)
+                    .speed(1),
+            );
+        });
 
         ui.add_space(spacing);
 
@@ -186,11 +213,15 @@ impl Default for AppConfig {
         Self {
             hotkey_modifiers: hotkey::Modifiers::ALT,
             hotkey_keycode: hotkey::Code::F12,
+
             ocr_service: OcrServiceList::Owocr,
             dictionary_service: DictionaryServiceList::Jpdb,
+            srs_service: SrsServiceList::Jpdb,
 
             zoom_factor: 1.0,
             fullscreen: true,
+            window_width: 1280,
+            window_height: 720,
 
             card_colours,
         }
@@ -202,8 +233,14 @@ pub enum OcrServiceList {
     Owocr,
 }
 
-impl Into<Box<dyn OcrService + Send>> for OcrServiceList {
-    fn into(self) -> Box<dyn OcrService + Send> {
+impl OcrServiceList {
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Owocr => "owocr",
+        }
+    }
+
+    pub fn create_service(&self) -> Box<dyn OcrService> {
         match self {
             Self::Owocr => Box::new(Owocr::default()),
         }
@@ -215,8 +252,33 @@ pub enum DictionaryServiceList {
     Jpdb,
 }
 
-impl Into<Box<dyn DictionaryService + Send>> for DictionaryServiceList {
-    fn into(self) -> Box<dyn DictionaryService + Send> {
+impl DictionaryServiceList {
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Jpdb => "jpdb",
+        }
+    }
+
+    pub fn create_service(&self) -> Box<dyn DictionaryService> {
+        match self {
+            Self::Jpdb => Box::new(Jpdb::default()),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
+pub enum SrsServiceList {
+    Jpdb,
+}
+
+impl SrsServiceList {
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Jpdb => "jpdb",
+        }
+    }
+
+    pub fn create_service(&self) -> Box<dyn SrsService> {
         match self {
             Self::Jpdb => Box::new(Jpdb::default()),
         }

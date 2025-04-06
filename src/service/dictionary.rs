@@ -1,18 +1,19 @@
 use anyhow::Result;
-use eframe::egui::{self, Rect};
+
+use super::{Service, ServiceJob};
 
 pub mod jpdb;
 
-pub trait DictionaryService {
-    fn name(&self) -> &'static str;
+pub type DictionaryInput = Vec<String>;
+pub type DictionaryOutput = Result<Vec<Vec<Word>>>;
 
-    fn init(&mut self) -> Result<()>;
-    fn terminate(&mut self) -> Result<()>;
-    fn config_gui(&mut self, ui: &mut egui::Ui);
-
-    fn parse_text_rects(&mut self, text: &[(Rect, String)]) -> Result<Vec<(Rect, Vec<Word>)>>;
-    fn add_to_deck(&mut self, word: &Word) -> Result<()>;
+pub trait DictionaryService: Service<DictionaryInput, DictionaryOutput> {
+    fn parse(&mut self, text: DictionaryInput) -> ServiceJob<DictionaryOutput> {
+        self.call(text)
+    }
 }
+
+impl<T> DictionaryService for T where T: Service<DictionaryInput, DictionaryOutput> {}
 
 #[derive(Debug, Clone)]
 pub struct Word {

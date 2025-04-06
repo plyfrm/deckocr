@@ -143,39 +143,12 @@ impl eframe::App for EframeApp {
             }
         }
 
-        let mut ocr_window_close_requested = false;
-
         if let Some(ocr_window) = &mut self.ocr_window {
-            // FIXME: this needs to be fully closed for at least one frame or we can't get focus back when OCR is triggered
-            ctx.show_viewport_immediate(
-                egui::ViewportId(egui::Id::new("ocr_viewport")),
-                egui::ViewportBuilder {
-                    title: Some(WINDOW_TITLE.to_owned()),
-                    inner_size: Some(if self.config.fullscreen {
-                        ocr_window.texture.size_vec2()
-                    } else {
-                        vec2(
-                            self.config.window_width as f32,
-                            self.config.window_height as f32,
-                        )
-                    }),
-                    fullscreen: Some(self.config.fullscreen),
-                    ..Default::default()
-                },
-                |ctx, _| {
-                    ocr_window.show(ctx, &mut self.errors, &mut self.services);
+            ocr_window.show(ctx, &self.config, &mut self.errors, &mut self.services);
 
-                    if ocr_window.should_close
-                        || ctx.input(|input| input.viewport().close_requested())
-                    {
-                        ocr_window_close_requested = true;
-                    }
-                },
-            );
-        }
-
-        if ocr_window_close_requested {
-            self.ocr_window = None;
+            if ocr_window.close_requested {
+                self.ocr_window = None;
+            }
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {

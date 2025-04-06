@@ -21,7 +21,7 @@ use crate::{
 const RELEVANT_CARD_STATES: &[&str] = &["not in deck", "new", "learning", "due", "failed"];
 
 pub struct OcrWindow {
-    pub should_close: bool,
+    pub close_requested: bool,
 
     pub texture: TextureHandle,
     pub config: AppConfig,
@@ -30,7 +30,7 @@ pub struct OcrWindow {
     // still loading if some
     pub state: State,
 
-    pub first_frame: bool,
+    pub frame_count: u32,
 }
 
 pub enum State {
@@ -92,7 +92,7 @@ impl OcrWindow {
         let state = State::LoadingOcr(services.ocr.ocr(image));
 
         Ok(Self {
-            should_close: false,
+            close_requested: false,
 
             texture,
             config,
@@ -100,7 +100,7 @@ impl OcrWindow {
 
             state,
 
-            first_frame: true,
+            frame_count: 0,
         })
     }
 
@@ -140,34 +140,71 @@ impl OcrWindow {
         Ok(())
     }
 
-    pub fn show(&mut self, ctx: &egui::Context, errors: &mut Errors, services: &mut Services) {
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        config: &AppConfig,
+        errors: &mut Errors,
+        services: &mut Services,
+    ) {
         if let Err(e) = self.manage_loading(services) {
             errors.push(e);
         }
 
-        if self.first_frame {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        // NOTE: the viewport needs to be fully closed for at least 1 frame or we aren't
+        // able to grab the focus again
+        if self.frame_count == 0 {
+            self.frame_count += 1;
+            return;
         }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            fill_texture(ctx, ui, &self.texture);
-
-            if self.state.is_loading() {
-                ui.centered_and_justified(|ui| {
-                    ui.add(
-                        egui::Spinner::new()
-                            .color(Color32::from_white_alpha(96))
-                            .size(48.0),
-                    );
-                });
-            } else {
-                self.show_without_rects(ui);
-
-                if let Err(e) = self.handle_input(ctx, services) {
-                    errors.push(e);
+        ctx.show_viewport_immediate(
+            egui::ViewportId(egui::Id::new("ocr_viewport")),
+            egui::ViewportBuilder {
+                inner_size: match self.config.fullscreen {
+                    true => Some(self.texture.size_vec2()),
+                    false => Some(vec2(
+                        config.window_width as f32,
+                        config.window_height as f32,
+                    )),
+                },
+                fullscreen: Some(self.config.fullscreen),
+                ..Default::default()
+            },
+            |ctx, _| {
+                if self.frame_count == 1 {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
                 }
-            }
-        });
+
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    fill_texture(ctx, ui, &self.texture);
+
+                    if self.state.is_loading() {
+                        ui.centered_and_justified(|ui| {
+                            ui.add(
+                                egui::Spinner::new()
+                                    .color(Color32::from_white_alpha(96))
+                                    .size(48.0),
+                            );
+                        });
+                    } else {
+                        self.show_without_rects(ui);
+
+                        if let Err(e) = self.handle_input(ctx, services) {
+                            errors.push(e);
+                        }
+                    }
+
+                    ctx.input(|input| {
+                        if input.viewport().close_requested() {
+                            self.close_requested = true;
+                        }
+                    });
+                });
+            },
+        );
+
+        self.frame_count += 1;
     }
 
     // TODO: controller input
@@ -315,7 +352,7 @@ impl OcrWindow {
                 state.scroll_to_current_word_requested = true;
             }
             if input.key_pressed(egui::Key::Escape) {
-                self.should_close = true;
+                self.close_requested = true;
             }
             if input.key_pressed(egui::Key::Enter) {
                 add_to_deck = true;

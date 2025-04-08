@@ -12,7 +12,7 @@ use crate::{
     service::{
         dictionary::{DictionaryServiceJob, TextWithRuby, Word},
         ocr::{OcrResponse, OcrServiceJob},
-        Services,
+        ServiceJob, Services,
     },
     Errors, WINDOW_TITLE,
 };
@@ -54,6 +54,8 @@ pub struct Ready {
 
     pub selected_word: (usize, usize),
     pub scroll_to_current_word_requested: bool,
+
+    pub add_to_deck_job: Option<((usize, usize), ServiceJob<Result<()>>)>,
 }
 
 impl Ready {
@@ -139,6 +141,7 @@ impl OcrWindow {
                         word_rects: Default::default(),
                         selected_word,
                         scroll_to_current_word_requested: false,
+                        add_to_deck_job: None,
                     });
                 }
             },
@@ -166,6 +169,27 @@ impl OcrWindow {
         if self.frame_count == 0 {
             self.frame_count += 1;
             return;
+        }
+
+        // update card state if a card was added to the user's deck
+        if let State::Ready(state) = &mut self.state {
+            if let Some(((paragraph_idx, word_idx), job)) = &mut state.add_to_deck_job {
+                match job.try_wait() {
+                    Ok(Some(_)) => {
+                        state.words[*paragraph_idx][*word_idx]
+                            .definition
+                            .as_mut()
+                            .unwrap()
+                            .card_state = "new".to_owned();
+                        state.add_to_deck_job = None;
+                    }
+                    Err(e) => {
+                        errors.push(e);
+                        state.add_to_deck_job = None;
+                    }
+                    _ => {}
+                }
+            }
         }
 
         ctx.show_viewport_immediate(
@@ -383,14 +407,9 @@ impl OcrWindow {
         if add_to_deck {
             let word = state.words[state.selected_word.0][state.selected_word.1].clone();
 
-            services.srs.add_to_deck(&word).wait()??;
+            let job = services.srs.add_to_deck(&word);
 
-            state
-                .selected_word_mut()
-                .definition
-                .as_mut()
-                .unwrap()
-                .card_state = "new".to_owned();
+            state.add_to_deck_job = Some((state.selected_word, job));
         }
 
         Ok(())

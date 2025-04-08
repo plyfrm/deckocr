@@ -28,7 +28,7 @@ pub struct JpdbSrsConfig {
 
 impl Config for JpdbSrsConfig {
     fn path() -> &'static str {
-        "srs/jpdb.json"
+        "srs_services/jpdb.json"
     }
 
     fn show_ui(&mut self, ui: &mut eframe::egui::Ui) {

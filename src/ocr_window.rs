@@ -104,6 +104,13 @@ impl OcrWindow {
         })
     }
 
+    pub fn is_loading(&self) -> bool {
+        match &self.state {
+            State::LoadingDictionary(_) | State::LoadingOcr(_) => true,
+            State::Ready(_) => false,
+        }
+    }
+
     pub fn manage_loading(&mut self, services: &mut Services) -> Result<()> {
         match &mut self.state {
             State::Ready(_) => {}

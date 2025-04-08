@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use anyhow::{anyhow, Context, Result};
 use config::{AppConfig, Config};
@@ -59,6 +62,7 @@ struct EframeApp {
     ocr_window: Option<OcrWindow>,
 
     errors: Errors,
+    last_repaint: std::time::Instant,
 }
 
 impl EframeApp {
@@ -96,10 +100,22 @@ impl EframeApp {
             ocr_window: None,
 
             errors: Default::default(),
+            last_repaint: Instant::now(),
         })
     }
 
     pub fn trigger_ocr(&mut self, ctx: &egui::Context) -> Result<()> {
+        let currently_loading = self
+            .ocr_window
+            .as_ref()
+            .map(|window| window.is_loading())
+            .unwrap_or(false);
+
+        // only trigger ocr if we are not currently loading an ocr window (eliminates some jankiness with steam input)
+        if currently_loading {
+            return Ok(());
+        }
+
         let monitor = xcap::Monitor::all()?
             .into_iter()
             .find(|monitor| monitor.is_primary().unwrap_or(false))
@@ -126,9 +142,9 @@ impl eframe::App for EframeApp {
     }
 
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
-        // continuous repaint mode
-        // TODO: get rid of this
+        std::thread::sleep(Duration::from_millis(16).saturating_sub(self.last_repaint.elapsed()));
         ctx.request_repaint();
+        self.last_repaint = Instant::now();
 
         ctx.set_zoom_factor(self.config.zoom_factor);
 

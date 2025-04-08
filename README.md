@@ -9,17 +9,9 @@ OCR front-end, primarily for the Steam Deck.
 
 ## Supported services
 
-### OCR
-
-- [OwOCR](https://github.com/AuroraWright/owocr) through websocket
-
-### Dictionary
-
-- [jpdb](https://jpdb.io)
-
-### SRS
-
-- [jpdb](https://jpdb.io)
+| OCR | Dictionary | SRS |
+| --- | --- | --- |
+| [OwOCR](https://github.com/AuroraWright/owocr) (websocket) | [jpdb](https://jpdb.io) | [jpdb](https://jpdb.io) |
 
 ## Screenshots
 

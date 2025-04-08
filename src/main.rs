@@ -142,6 +142,8 @@ impl eframe::App for EframeApp {
     }
 
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
+        // ideally we should only repaint when needed instead of limiting the framerate, but the hotkey can
+        // only be checked for on the same thread the event loop is running on so that limits our options.
         std::thread::sleep(Duration::from_millis(16).saturating_sub(self.last_repaint.elapsed()));
         ctx.request_repaint();
         self.last_repaint = Instant::now();

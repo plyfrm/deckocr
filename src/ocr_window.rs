@@ -570,11 +570,11 @@ impl OcrWindow {
         }
 
         fn bottom_bar_ui(_win: &mut OcrWindow, ui: &mut egui::Ui) {
-            let dpad = egui::include_image!("../assets/controller_icons/shared/sharerd-D-PAD.svg");
+            let dpad = egui::include_image!("../assets/controller_icons/sharerd-D-PAD.svg");
             let rtrigger =
-                egui::include_image!("../assets/controller_icons/shared/shared-Right Trigger.svg");
-            let a = egui::include_image!("../assets/controller_icons/shared/shared-A.svg");
-            let b = egui::include_image!("../assets/controller_icons/shared/shared-B.svg");
+                egui::include_image!("../assets/controller_icons/shared-Right Trigger.svg");
+            let a = egui::include_image!("../assets/controller_icons/shared-A.svg");
+            let b = egui::include_image!("../assets/controller_icons/shared-B.svg");
 
             let glyph_size = 32.0;
             let text_size = 20.0;
@@ -708,5 +708,3 @@ impl<'a> Widget for TextWithRubyWidget<'a> {
         response
     }
 }
-
-pub fn fill_texture(ctx: &egui::Context, ui: &mut egui::Ui, texture: &TextureHandle) {}

@@ -5,18 +5,21 @@ OCR front-end, primarily for the Steam Deck.
 ## Features
 
 - Full keyboard/controller navigation
-- Can mix and match different OCR/dictionary/SRS services
+- Can mix and match different OCR, Dictionary and SRS services.
 
-## Currently supported services
+## Supported services
 
-OCR:
-- OwOCR through websocket
+### OCR
 
-Dictionary:
-- jpdb
+- [OwOCR](https://github.com/AuroraWright/owocr) through websocket
 
-SRS:
-- jpdb
+### Dictionary
+
+- [jpdb](https://jpdb.io)
+
+### SRS
+
+- [jpdb](https://jpdb.io)
 
 ## Screenshots
 
@@ -34,7 +37,7 @@ project and would require a host of new features, so do not expect it anytime so
 
 Local MDict dictionary support as well as AnkiConnect support are both planned so the app can be
 used offline. Beyond that, the addition of new services would mostly come down to whether the project
-sees contributions or not.
+sees contributions.
 
 ## Acknowledgements
 

@@ -170,53 +170,87 @@ impl eframe::App for EframeApp {
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                let header_size = 24.0;
+            egui_extras::StripBuilder::new(ui)
+                .size(egui_extras::Size::remainder())
+                .size(egui_extras::Size::exact(0.0))
+                .size(egui_extras::Size::exact(22.0))
+                .vertical(|mut strip| {
+                    strip.cell(|ui| {
+                        egui::ScrollArea::vertical()
+                            .scroll_bar_visibility(
+                                egui::scroll_area::ScrollBarVisibility::AlwaysVisible,
+                            )
+                            .show(ui, |ui| {
+                                let header_size = 24.0;
 
-                ui.label(
-                    egui::RichText::new(concat!(env!("CARGO_PKG_NAME"), " Configuration"))
-                        .size(header_size)
-                        .strong(),
-                );
+                                ui.label(
+                                    egui::RichText::new(concat!(
+                                        env!("CARGO_PKG_NAME"),
+                                        " Configuration"
+                                    ))
+                                    .size(header_size)
+                                    .strong(),
+                                );
 
-                self.config.show_ui(ui);
+                                self.config.show_ui(ui);
 
-                ui.separator();
+                                ui.separator();
 
-                egui::CollapsingHeader::new(
-                    egui::RichText::new(format!("OCR: {}", self.config.ocr_service.name()))
-                        .size(header_size),
-                )
-                .default_open(true)
-                .show_unindented(ui, |ui| {
-                    self.services.ocr.show_config_ui(ui);
+                                egui::CollapsingHeader::new(
+                                    egui::RichText::new(format!(
+                                        "OCR: {}",
+                                        self.config.ocr_service.name()
+                                    ))
+                                    .size(header_size),
+                                )
+                                .default_open(true)
+                                .show_unindented(ui, |ui| {
+                                    self.services.ocr.show_config_ui(ui);
+                                });
+
+                                ui.separator();
+
+                                egui::CollapsingHeader::new(
+                                    egui::RichText::new(format!(
+                                        "Dictionary: {}",
+                                        self.config.dictionary_service.name()
+                                    ))
+                                    .size(header_size),
+                                )
+                                .default_open(true)
+                                .show_unindented(ui, |ui| {
+                                    self.services.dictionary.show_config_ui(ui);
+                                });
+
+                                ui.separator();
+
+                                egui::CollapsingHeader::new(
+                                    egui::RichText::new(format!(
+                                        "SRS: {}",
+                                        self.config.srs_service.name()
+                                    ))
+                                    .size(header_size),
+                                )
+                                .default_open(true)
+                                .show_unindented(ui, |ui| {
+                                    self.services.srs.show_config_ui(ui);
+                                });
+                            });
+                    });
+
+                    strip.empty();
+
+                    strip.cell(|ui| {
+                        ui.centered_and_justified(|ui| {
+                            if ui.button("Reload Services").clicked() {
+                                match Services::new(&self.config) {
+                                    Ok(services) => self.services = services,
+                                    Err(e) => self.errors.push(e),
+                                }
+                            }
+                        });
+                    });
                 });
-
-                ui.separator();
-
-                egui::CollapsingHeader::new(
-                    egui::RichText::new(format!(
-                        "Dictionary: {}",
-                        self.config.dictionary_service.name()
-                    ))
-                    .size(header_size),
-                )
-                .default_open(true)
-                .show_unindented(ui, |ui| {
-                    self.services.dictionary.show_config_ui(ui);
-                });
-
-                ui.separator();
-
-                egui::CollapsingHeader::new(
-                    egui::RichText::new(format!("SRS: {}", self.config.srs_service.name()))
-                        .size(header_size),
-                )
-                .default_open(true)
-                .show_unindented(ui, |ui| {
-                    self.services.srs.show_config_ui(ui);
-                });
-            });
         });
     }
 }

@@ -1,3 +1,5 @@
+use std::collections::{BTreeMap, HashMap};
+
 use anyhow::{anyhow, Result};
 use eframe::egui;
 use serde::{Deserialize, Serialize};
@@ -14,6 +16,7 @@ use super::SrsService;
 
 const API_URL_PARSE: &'static str = "https://jpdb.io/api/v1/parse";
 const API_URL_ADD_TO_DECK: &'static str = "https://jpdb.io/api/v1/deck/add-vocabulary";
+const API_URL_LIST_DECKS: &'static str = "https://jpdb.io/api/v1/list-user-decks";
 
 #[derive(Default)]
 pub struct JpdbSrs {
@@ -24,6 +27,9 @@ pub struct JpdbSrs {
 pub struct JpdbSrsConfig {
     pub api_key: String,
     pub mining_deck_id: u64,
+
+    #[serde(skip)]
+    pub decks: BTreeMap<u64, String>,
 }
 
 impl Config for JpdbSrsConfig {
@@ -36,16 +42,59 @@ impl Config for JpdbSrsConfig {
             ui.label("API Key:");
             ui.text_edit_singleline(&mut self.api_key);
         });
-        ui.horizontal(|ui| {
-            ui.label("Mining Deck ID:");
-            ui.add(egui::DragValue::new(&mut self.mining_deck_id));
-        });
+
+        if self.decks.is_empty() {
+            ui.horizontal(|ui| {
+                ui.label("Mining Deck ID:");
+                ui.add(egui::DragValue::new(&mut self.mining_deck_id));
+            });
+        } else {
+            ui.horizontal(|ui| {
+                ui.label("Mining Deck:");
+                egui::ComboBox::from_id_salt("jpdb_mining_deck")
+                    .selected_text(
+                        self.decks
+                            .get(&self.mining_deck_id)
+                            .cloned()
+                            .unwrap_or_else(|| self.mining_deck_id.to_string()),
+                    )
+                    .show_ui(ui, |ui| {
+                        for (id, name) in self.decks.iter().rev() {
+                            ui.selectable_value(&mut self.mining_deck_id, *id, name);
+                        }
+                    });
+            });
+        }
     }
 }
 
 impl SrsService for JpdbSrs {
     fn init(&mut self) -> Result<()> {
         self.config = JpdbSrsConfig::load()?;
+
+        let _ = (|| -> Option<()> {
+            let decks: Value = attohttpc::post(API_URL_LIST_DECKS)
+                .bearer_auth(&self.config.api_key)
+                .json(&json!({
+                    "fields": [
+                        "id",
+                        "name"
+                    ]
+                }))
+                .ok()?
+                .send()
+                .ok()?
+                .json()
+                .ok()?;
+
+            for deck in decks.get("decks")?.as_array()? {
+                let id = deck.get(0)?.as_u64()?;
+                let name = deck.get(1)?.as_str()?.to_owned();
+                self.config.decks.insert(id, name);
+            }
+            Some(())
+        })();
+
         Ok(())
     }
 

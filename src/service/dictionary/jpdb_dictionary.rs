@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use eframe::egui;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -54,12 +54,15 @@ impl Config for JpdbDictionaryConfig {
 
 impl DictionaryService for JpdbDictionary {
     fn init(&mut self) -> anyhow::Result<()> {
-        self.config = JpdbDictionaryConfig::load()?;
+        self.config = JpdbDictionaryConfig::load()
+            .context("JpdbDictionary: Failed to load configuration file")?;
         Ok(())
     }
 
     fn terminate(&mut self) -> anyhow::Result<()> {
-        self.config.save()?;
+        self.config
+            .save()
+            .context("JpdbDictionary: Failed to save configuration file")?;
         Ok(())
     }
 
@@ -90,10 +93,14 @@ impl DictionaryService for JpdbDictionary {
                         "meanings",
                         "card_state"
                     ]
-                }))?
-                .send()?
-                .error_for_status()?
-                .json()?;
+                }))
+                .unwrap()
+                .send()
+                .context("JpdbDictionary: Failed to send http request")?
+                .error_for_status()
+                .context("JpdbDictionary: Response status code is not a success code")?
+                .json()
+                .context("JpdbDictionary: Response from the server is not valid json")?;
 
             let tokens_json = json.get("tokens").map(Value::as_array).flatten().ok_or({
             anyhow!("Response from `{API_URL_PARSE}` did not contain a `tokens` field, or it was not an array")

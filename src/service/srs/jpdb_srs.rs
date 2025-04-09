@@ -1,6 +1,6 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use eframe::egui;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -70,7 +70,8 @@ impl Config for JpdbSrsConfig {
 
 impl SrsService for JpdbSrs {
     fn init(&mut self) -> Result<()> {
-        self.config = JpdbSrsConfig::load()?;
+        self.config =
+            JpdbSrsConfig::load().context("JpdbSrs: Failed to load configuration file")?;
 
         let _ = (|| -> Option<()> {
             let decks: Value = attohttpc::post(API_URL_LIST_DECKS)
@@ -99,7 +100,9 @@ impl SrsService for JpdbSrs {
     }
 
     fn terminate(&mut self) -> anyhow::Result<()> {
-        self.config.save()?;
+        self.config
+            .save()
+            .context("JpdbSrs: Failed to save configuration file")?;
         Ok(())
     }
 
@@ -128,10 +131,14 @@ impl SrsService for JpdbSrs {
                         "vid",
                         "sid"
                     ]
-                }))?
-                .send()?
-                .error_for_status()?
-                .json()?;
+                }))
+                .unwrap()
+                .send()
+                .context("JpdbSrs: Failed to send http request")?
+                .error_for_status()
+                .context("JpdbSrs: Response status code is not a success code")?
+                .json()
+                .context("JpdbSrs: Response from server is not valid json")?;
 
             let ids = json
                 .get("vocabulary")
@@ -158,9 +165,12 @@ impl SrsService for JpdbSrs {
                     "vocabulary": [[vid, sid]],
                     "occurences": [1],
                     "replace_existing_occurences": true
-                }))?
-                .send()?
-                .error_for_status()?;
+                }))
+                .unwrap()
+                .send()
+                .context("JpdbSrs: Failed to send http request")?
+                .error_for_status()
+                .context("JpdbSrs: Response status code is not a success code")?;
 
             Ok(())
         })

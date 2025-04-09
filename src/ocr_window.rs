@@ -1,7 +1,7 @@
 use core::f32;
 use std::collections::HashMap;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use eframe::egui::{self, vec2, Color32, CornerRadius, Pos2, Rect, TextureHandle, Widget};
 use egui_extras::Size;
 use gilrs::Gilrs;
@@ -14,7 +14,7 @@ use crate::{
         ocr::{OcrResponse, OcrServiceJob},
         ServiceJob, Services,
     },
-    Errors, WINDOW_TITLE,
+    Popups, WINDOW_TITLE,
 };
 
 /// Holding the skip button will automatically skip to those words
@@ -74,7 +74,7 @@ impl OcrWindow {
         config: AppConfig,
         image: RgbaImage,
         services: &mut Services,
-    ) -> Result<Self> {
+    ) -> Self {
         let color_image = egui::ColorImage::from_rgba_unmultiplied(
             [image.width() as usize, image.height() as usize],
             image.as_flat_samples().as_slice(),
@@ -93,7 +93,7 @@ impl OcrWindow {
 
         let state = State::LoadingOcr(services.ocr.ocr(image));
 
-        Ok(Self {
+        Self {
             close_requested: false,
 
             texture,
@@ -103,7 +103,7 @@ impl OcrWindow {
             state,
 
             frame_count: 0,
-        })
+        }
     }
 
     pub fn is_loading(&self) -> bool {
@@ -116,14 +116,24 @@ impl OcrWindow {
     pub fn manage_loading(&mut self, services: &mut Services) -> Result<()> {
         match &mut self.state {
             State::Ready(_) => {}
-            State::LoadingOcr(job) => match job.try_wait().unwrap().transpose()? {
+            State::LoadingOcr(job) => match job
+                .try_wait()
+                .unwrap()
+                .transpose()
+                .context("OCR ServiceJob returned an error")?
+            {
                 None => {}
                 Some(OcrResponse::WithRects(_)) => unimplemented!(),
                 Some(OcrResponse::WithoutRects(text)) => {
                     self.state = State::LoadingDictionary(services.dictionary.parse(text));
                 }
             },
-            State::LoadingDictionary(job) => match job.try_wait().unwrap().transpose()? {
+            State::LoadingDictionary(job) => match job
+                .try_wait()
+                .unwrap()
+                .transpose()
+                .context("Dictionary ServiceJob returned an error")?
+            {
                 None => {}
                 Some(words) => {
                     // set selected word to the first word with a definition
@@ -154,11 +164,11 @@ impl OcrWindow {
         &mut self,
         ctx: &egui::Context,
         config: &AppConfig,
-        errors: &mut Errors,
+        popups: &mut Popups,
         services: &mut Services,
     ) {
         if let Err(e) = self.manage_loading(services) {
-            errors.push(e);
+            popups.error(e);
             // we need to close the ocr window immediately when this errors, or we'll keep attempting to wait
             // on service jobs which have already finished with an error
             self.close_requested = true;
@@ -184,7 +194,7 @@ impl OcrWindow {
                         state.add_to_deck_job = None;
                     }
                     Err(e) => {
-                        errors.push(e);
+                        popups.error(e);
                         state.add_to_deck_job = None;
                     }
                     _ => {}
@@ -236,7 +246,7 @@ impl OcrWindow {
                         self.show_without_rects(ui);
 
                         if let Err(e) = self.handle_input(ctx, services) {
-                            errors.push(e);
+                            popups.error(e);
                         }
                     }
 
@@ -460,68 +470,70 @@ impl OcrWindow {
                 panic!("invariant broken: show_without_rects should only be called when self.state is Some!");
             };
 
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                let text_size = 32.0;
-                let ruby_size = 11.0;
-                let selection_highlight = Color32::from_white_alpha(8);
-                let paragraph_spacing = text_size / 2.0;
+            egui::ScrollArea::vertical()
+                .auto_shrink(false)
+                .show(ui, |ui| {
+                    let text_size = 32.0;
+                    let ruby_size = 11.0;
+                    let selection_highlight = Color32::from_white_alpha(8);
+                    let paragraph_spacing = text_size / 2.0;
 
-                ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+                    ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
 
-                let mut word_rects = HashMap::new();
+                    let mut word_rects = HashMap::new();
 
-                for (paragraph_idx, paragraph) in state.words.iter().enumerate() {
-                    if paragraph_idx == state.selected_word.0 {
-                        ui.add_space(paragraph_spacing);
-                    }
-
-                    ui.horizontal_wrapped(|ui| {
-                        for (word_idx, word) in paragraph.iter().enumerate() {
-                            let colour = word
-                                .definition
-                                .as_ref()
-                                .map(|def| win.config.card_colours.get(&def.card_state))
-                                .flatten()
-                                .copied()
-                                .map(|[r, g, b]| Color32::from_rgb(r, g, b))
-                                .unwrap_or(Color32::WHITE);
-
-                            let rect = ui
-                                .add(TextWithRubyWidget {
-                                    text_with_ruby: &word.text,
-                                    text_size,
-                                    ruby_size,
-                                    colour,
-                                })
-                                .rect;
-
-                            if state.word_rects.is_empty() {
-                                word_rects.insert((paragraph_idx, word_idx), rect);
-                            }
-
-                            if state.selected_word == (paragraph_idx, word_idx) {
-                                if state.scroll_to_current_word_requested {
-                                    ui.scroll_to_rect(rect, None);
-                                }
-                                ui.painter().rect_filled(
-                                    rect,
-                                    egui::CornerRadius::ZERO,
-                                    selection_highlight,
-                                );
-                            }
+                    for (paragraph_idx, paragraph) in state.words.iter().enumerate() {
+                        if paragraph_idx == state.selected_word.0 {
+                            ui.add_space(paragraph_spacing);
                         }
-                    });
 
-                    if paragraph_idx == state.selected_word.0 {
+                        ui.horizontal_wrapped(|ui| {
+                            for (word_idx, word) in paragraph.iter().enumerate() {
+                                let colour = word
+                                    .definition
+                                    .as_ref()
+                                    .map(|def| win.config.card_colours.get(&def.card_state))
+                                    .flatten()
+                                    .copied()
+                                    .map(|[r, g, b]| Color32::from_rgb(r, g, b))
+                                    .unwrap_or(Color32::WHITE);
+
+                                let rect = ui
+                                    .add(TextWithRubyWidget {
+                                        text_with_ruby: &word.text,
+                                        text_size,
+                                        ruby_size,
+                                        colour,
+                                    })
+                                    .rect;
+
+                                if state.word_rects.is_empty() {
+                                    word_rects.insert((paragraph_idx, word_idx), rect);
+                                }
+
+                                if state.selected_word == (paragraph_idx, word_idx) {
+                                    if state.scroll_to_current_word_requested {
+                                        ui.scroll_to_rect(rect, None);
+                                    }
+                                    ui.painter().rect_filled(
+                                        rect,
+                                        egui::CornerRadius::ZERO,
+                                        selection_highlight,
+                                    );
+                                }
+                            }
+                        });
+
+                        if paragraph_idx == state.selected_word.0 {
+                            ui.add_space(paragraph_spacing);
+                        }
                         ui.add_space(paragraph_spacing);
                     }
-                    ui.add_space(paragraph_spacing);
-                }
 
-                if state.word_rects.is_empty() {
-                    state.word_rects = word_rects;
-                }
-            });
+                    if state.word_rects.is_empty() {
+                        state.word_rects = word_rects;
+                    }
+                });
         }
 
         fn definition_panel_ui(win: &mut OcrWindow, ui: &mut egui::Ui) {

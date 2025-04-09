@@ -10,7 +10,7 @@ OCR front-end, primarily for the Steam Deck.
 ## Supported services
 
 | OCR | Dictionary | SRS |
-| --- | --- | --- |
+| :---: | :---: | :---: |
 | [OwOCR](https://github.com/AuroraWright/owocr) (websocket) | [jpdb](https://jpdb.io) | [jpdb](https://jpdb.io) |
 
 ## Screenshots

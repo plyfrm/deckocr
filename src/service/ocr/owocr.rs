@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use eframe::egui;
 use image::{ImageFormat, RgbaImage};
 use serde::{Deserialize, Serialize};
@@ -49,12 +49,14 @@ impl Config for OwocrConfig {
 
 impl OcrService for Owocr {
     fn init(&mut self) -> anyhow::Result<()> {
-        self.config = OwocrConfig::load()?;
+        self.config = OwocrConfig::load().context("Owocr: Failed to load configuration file")?;
         Ok(())
     }
 
     fn terminate(&mut self) -> anyhow::Result<()> {
-        self.config.save()?;
+        self.config
+            .save()
+            .context("Owocr: Failed to save configuration file")?;
         Ok(())
     }
 
@@ -67,16 +69,29 @@ impl OcrService for Owocr {
 
         ServiceJob::new(move || {
             let mut buf = Cursor::new(Vec::new());
-            image.write_to(&mut buf, ImageFormat::Png)?;
+            image.write_to(&mut buf, ImageFormat::Png).unwrap();
 
-            let (mut socket, _) = tungstenite::connect(addr)?;
+            let (mut socket, _) = tungstenite::connect(&addr)
+                .with_context(|| format!("Owocr: Failed to connect to websocket `{addr}`"))?;
 
-            socket.send(tungstenite::Message::binary(buf.into_inner()))?;
+            socket
+                .send(tungstenite::Message::binary(buf.into_inner()))
+                .context("Owocr: Failed to send image through websocket")?;
             // NOTE: owocr sends a text message containing just "True" the socket is first connected to. we need to consume it
-            socket.read()?;
-            let text = socket.read()?.into_text()?;
+            socket
+                .read()
+                .context("Owocr: Failed to read confirmation message from websocket")?;
+            let text = socket
+                .read()
+                .context("Owocr: Failed to read response message from websocket")?
+                .into_text()
+                .context(
+                    "Owocr: Response message from websocket did not contain UTF-8 encoded text",
+                )?;
 
-            socket.close(None)?;
+            socket
+                .close(None)
+                .context("Owocr: Failed to close websocket")?;
 
             let text = text.split('\u{3000}').map(str::to_owned).collect();
 

@@ -61,7 +61,7 @@ struct EframeApp {
 
     ocr_window: Option<OcrWindow>,
 
-    errors: Errors,
+    popups: Popups,
     last_repaint: std::time::Instant,
 }
 
@@ -99,7 +99,7 @@ impl EframeApp {
 
             ocr_window: None,
 
-            errors: Default::default(),
+            popups: Default::default(),
             last_repaint: Instant::now(),
         })
     }
@@ -121,14 +121,16 @@ impl EframeApp {
             .find(|monitor| monitor.is_primary().unwrap_or(false))
             .ok_or_else(|| anyhow!("No primary monitor found."))?;
 
-        let image = monitor.capture_image()?;
+        let image = monitor
+            .capture_image()
+            .context("Failed to capture primary monitor")?;
 
         self.ocr_window = Some(OcrWindow::new(
             ctx,
             self.config.clone(),
             image,
             &mut self.services,
-        )?);
+        ));
 
         Ok(())
     }
@@ -150,19 +152,19 @@ impl eframe::App for EframeApp {
 
         ctx.set_zoom_factor(self.config.zoom_factor);
 
-        self.errors.show(ctx);
+        self.popups.show(ctx);
 
         if let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
             if event.id == self.ocr_hotkey.id && event.state == global_hotkey::HotKeyState::Pressed
             {
                 if let Err(e) = self.trigger_ocr(ctx) {
-                    self.errors.push(e);
+                    self.popups.error(e);
                 }
             }
         }
 
         if let Some(ocr_window) = &mut self.ocr_window {
-            ocr_window.show(ctx, &self.config, &mut self.errors, &mut self.services);
+            ocr_window.show(ctx, &self.config, &mut self.popups, &mut self.services);
 
             if ocr_window.close_requested {
                 self.ocr_window = None;
@@ -176,66 +178,62 @@ impl eframe::App for EframeApp {
                 .size(egui_extras::Size::exact(22.0))
                 .vertical(|mut strip| {
                     strip.cell(|ui| {
-                        egui::ScrollArea::vertical()
-                            .scroll_bar_visibility(
-                                egui::scroll_area::ScrollBarVisibility::AlwaysVisible,
+                        egui::ScrollArea::vertical().show(ui, |ui| {
+                            let header_size = 24.0;
+
+                            ui.label(
+                                egui::RichText::new(concat!(
+                                    env!("CARGO_PKG_NAME"),
+                                    " Configuration"
+                                ))
+                                .size(header_size)
+                                .strong(),
+                            );
+
+                            self.config.show_ui(ui);
+
+                            ui.separator();
+
+                            egui::CollapsingHeader::new(
+                                egui::RichText::new(format!(
+                                    "OCR: {}",
+                                    self.config.ocr_service.name()
+                                ))
+                                .size(header_size),
                             )
-                            .show(ui, |ui| {
-                                let header_size = 24.0;
-
-                                ui.label(
-                                    egui::RichText::new(concat!(
-                                        env!("CARGO_PKG_NAME"),
-                                        " Configuration"
-                                    ))
-                                    .size(header_size)
-                                    .strong(),
-                                );
-
-                                self.config.show_ui(ui);
-
-                                ui.separator();
-
-                                egui::CollapsingHeader::new(
-                                    egui::RichText::new(format!(
-                                        "OCR: {}",
-                                        self.config.ocr_service.name()
-                                    ))
-                                    .size(header_size),
-                                )
-                                .default_open(true)
-                                .show_unindented(ui, |ui| {
-                                    self.services.ocr.show_config_ui(ui);
-                                });
-
-                                ui.separator();
-
-                                egui::CollapsingHeader::new(
-                                    egui::RichText::new(format!(
-                                        "Dictionary: {}",
-                                        self.config.dictionary_service.name()
-                                    ))
-                                    .size(header_size),
-                                )
-                                .default_open(true)
-                                .show_unindented(ui, |ui| {
-                                    self.services.dictionary.show_config_ui(ui);
-                                });
-
-                                ui.separator();
-
-                                egui::CollapsingHeader::new(
-                                    egui::RichText::new(format!(
-                                        "SRS: {}",
-                                        self.config.srs_service.name()
-                                    ))
-                                    .size(header_size),
-                                )
-                                .default_open(true)
-                                .show_unindented(ui, |ui| {
-                                    self.services.srs.show_config_ui(ui);
-                                });
+                            .default_open(true)
+                            .show_unindented(ui, |ui| {
+                                self.services.ocr.show_config_ui(ui);
                             });
+
+                            ui.separator();
+
+                            egui::CollapsingHeader::new(
+                                egui::RichText::new(format!(
+                                    "Dictionary: {}",
+                                    self.config.dictionary_service.name()
+                                ))
+                                .size(header_size),
+                            )
+                            .default_open(true)
+                            .show_unindented(ui, |ui| {
+                                self.services.dictionary.show_config_ui(ui);
+                            });
+
+                            ui.separator();
+
+                            egui::CollapsingHeader::new(
+                                egui::RichText::new(format!(
+                                    "SRS: {}",
+                                    self.config.srs_service.name()
+                                ))
+                                .size(header_size),
+                            )
+                            .default_open(true)
+                            .show_unindented(ui, |ui| {
+                                self.services.srs.show_config_ui(ui);
+                            });
+                        });
                     });
 
                     strip.empty();
@@ -245,7 +243,7 @@ impl eframe::App for EframeApp {
                             if ui.button("Reload Services").clicked() {
                                 match Services::new(&self.config) {
                                     Ok(services) => self.services = services,
-                                    Err(e) => self.errors.push(e),
+                                    Err(e) => self.popups.error(e),
                                 }
                             }
                         });
@@ -256,47 +254,62 @@ impl eframe::App for EframeApp {
 }
 
 #[derive(Debug, Default)]
-pub struct Errors(Vec<anyhow::Error>);
+pub struct Popups(Vec<Popup>);
 
-impl Errors {
-    pub fn push(&mut self, e: anyhow::Error) {
-        self.0.push(e);
+#[derive(Debug)]
+struct Popup {
+    message: String,
+    first_frame: bool,
+}
+
+impl Popups {
+    pub fn error(&mut self, e: anyhow::Error) {
+        let mut s = format!("Error: {e}\n");
+
+        for (idx, error) in e.chain().enumerate().skip(1) {
+            s.push_str(&format!("\t{}. {}\n", idx, error));
+        }
+
+        self.0.push(Popup {
+            message: s,
+            first_frame: true,
+        });
     }
 
     pub fn show(&mut self, ctx: &egui::Context) {
-        let mut remove = None;
-        for (idx, error) in self.0.iter().enumerate() {
-            let message = format!("{:?}", error);
+        let mut close_popup = None;
 
+        for (idx, popup) in self.0.iter_mut().enumerate() {
             ctx.show_viewport_immediate(
-                egui::ViewportId(egui::Id::new(&message)),
+                egui::ViewportId(egui::Id::new(&popup.message)),
                 egui::ViewportBuilder {
-                    title: Some("An error has occured!".to_owned()),
-                    inner_size: Some(vec2(300.0, 100.0)),
+                    inner_size: Some(vec2(640.0, 480.0)),
                     ..Default::default()
                 },
                 |ctx, _| {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                    if popup.first_frame {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                        popup.first_frame = false
+                    }
 
                     egui::CentralPanel::default().show(ctx, |ui| {
                         egui_extras::StripBuilder::new(ui)
                             .size(egui_extras::Size::remainder())
-                            .size(egui_extras::Size::exact(20.0))
+                            .size(egui_extras::Size::exact(22.0))
                             .vertical(|mut strip| {
                                 strip.cell(|ui| {
-                                    egui::ScrollArea::vertical().show(ui, |ui| {
-                                        ui.vertical_centered_justified(|ui| {
-                                            ui.label(&message);
-                                        });
-                                    });
+                                    egui::ScrollArea::vertical().auto_shrink(false).show(
+                                        ui,
+                                        |ui| {
+                                            ui.label(&popup.message);
+                                        },
+                                    );
                                 });
 
                                 strip.cell(|ui| {
-                                    ui.vertical_centered(|ui| {
-                                        if ui.button("Close").clicked()
-                                            || ctx.input(|input| input.viewport().close_requested())
-                                        {
-                                            remove = Some(idx)
+                                    ui.centered_and_justified(|ui| {
+                                        if ui.button("Close").clicked() {
+                                            close_popup = Some(idx);
                                         }
                                     });
                                 });
@@ -306,6 +319,8 @@ impl Errors {
             );
         }
 
-        remove.map(|idx| self.0.swap_remove(idx));
+        if let Some(idx) = close_popup {
+            self.0.remove(idx);
+        }
     }
 }

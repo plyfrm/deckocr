@@ -1,5 +1,8 @@
 use core::f32;
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
 
 use anyhow::{Context, Result};
 use eframe::egui::{self, vec2, Color32, CornerRadius, Pos2, Rect, TextureHandle, Widget};
@@ -36,7 +39,7 @@ pub struct OcrWindow {
 pub enum State {
     LoadingOcr(OcrServiceJob),
     LoadingDictionary(DictionaryServiceJob),
-    Ready(Ready),
+    Ready(ReadyState),
 }
 
 impl State {
@@ -48,7 +51,9 @@ impl State {
     }
 }
 
-pub struct Ready {
+pub struct ReadyState {
+    input_state: InputState,
+
     pub words: Vec<Vec<Word>>,
     pub word_rects: HashMap<(usize, usize), Rect>, // used for finding next word on user input
 
@@ -58,13 +63,139 @@ pub struct Ready {
     pub add_to_deck_job: Option<((usize, usize), ServiceJob<Result<()>>)>,
 }
 
-impl Ready {
+impl ReadyState {
     pub fn selected_word(&self) -> &Word {
         &self.words[self.selected_word.0][self.selected_word.1]
     }
 
     pub fn selected_word_mut(&mut self) -> &mut Word {
         &mut self.words[self.selected_word.0][self.selected_word.1]
+    }
+}
+
+#[derive(Debug)]
+struct Key {
+    is_pressed: Option<Instant>,
+    was_consumed: bool,
+    last_retriggered: Instant,
+}
+
+impl Key {
+    fn change_state(&mut self, is_pressed: bool) {
+        if !is_pressed && self.is_pressed.is_some() {
+            self.is_pressed = None;
+        }
+
+        if is_pressed && self.is_pressed.is_none() {
+            self.is_pressed = Some(Instant::now());
+            self.was_consumed = false;
+        }
+    }
+
+    fn is_pressed(&self) -> bool {
+        self.is_pressed.is_some()
+    }
+
+    fn was_pressed(&mut self) -> bool {
+        if self.is_pressed.is_some() && !self.was_consumed {
+            self.was_consumed = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn was_pressed_with_retrigger(&mut self) -> bool {
+        let delay_before_first_retrigger = Duration::from_millis(300);
+        let delay_between_retriggers = Duration::from_millis(50);
+
+        if let Some(pressed_timestamp) = self.is_pressed {
+            if !self.was_consumed {
+                self.was_consumed = true;
+                return true;
+            } else if pressed_timestamp.elapsed() > delay_before_first_retrigger
+                && self.last_retriggered.elapsed() > delay_between_retriggers
+            {
+                self.last_retriggered = Instant::now();
+                return true;
+            }
+        }
+
+        false
+    }
+}
+
+impl Default for Key {
+    fn default() -> Self {
+        Self {
+            is_pressed: None,
+            was_consumed: false,
+            last_retriggered: Instant::now(),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct InputState {
+    up: Key,
+    down: Key,
+    left: Key,
+    right: Key,
+    skip_irrelevant: Key,
+    add_to_deck: Key,
+    exit: Key,
+    scroll_left: f32,
+    scroll_right: f32,
+}
+
+impl InputState {
+    pub fn update(&mut self, ctx: &egui::Context, gilrs: &mut Gilrs) {
+        let gilrs_events: Vec<_> = std::iter::from_fn(|| gilrs.next_event())
+            .map(|e| e.event)
+            .collect();
+
+        let update_key = |key: &mut Key, egui_key: egui::Key, gilrs_button: gilrs::Button| {
+            let mut is_pressed = false;
+
+            is_pressed |= ctx.input(|input| input.key_down(egui_key));
+            is_pressed |= gilrs
+                .gamepads()
+                .any(|(_, gamepad)| gamepad.is_pressed(gilrs_button));
+
+            key.change_state(is_pressed);
+        };
+
+        {
+            use egui::Key as K;
+            use gilrs::Button as B;
+
+            update_key(&mut self.up, K::ArrowUp, B::DPadUp);
+            update_key(&mut self.down, K::ArrowDown, B::DPadDown);
+            update_key(&mut self.left, K::ArrowLeft, B::DPadLeft);
+            update_key(&mut self.right, K::ArrowRight, B::DPadRight);
+            update_key(&mut self.add_to_deck, K::Enter, B::South);
+            update_key(&mut self.exit, K::Escape, B::East);
+        }
+
+        let skip_irrelevant_pressed = ctx.input(|input| {
+            input.modifiers.shift || input.pointer.button_down(egui::PointerButton::Primary)
+        }) || gilrs
+            .gamepads()
+            .any(|(_, gamepad)| gamepad.is_pressed(gilrs::Button::RightTrigger2));
+
+        self.skip_irrelevant.change_state(skip_irrelevant_pressed);
+
+        for event in gilrs_events {
+            match event {
+                gilrs::EventType::AxisChanged(gilrs::Axis::LeftStickY, value, _) => {
+                    self.scroll_left = value
+                }
+                gilrs::EventType::AxisChanged(gilrs::Axis::RightStickY, value, _) => {
+                    self.scroll_right = value
+                }
+                _ => {}
+            }
+        }
     }
 }
 
@@ -146,7 +277,8 @@ impl OcrWindow {
                             }
                         }
                     }
-                    self.state = State::Ready(Ready {
+                    self.state = State::Ready(ReadyState {
+                        input_state: Default::default(),
                         words,
                         word_rects: Default::default(),
                         selected_word,
@@ -262,165 +394,123 @@ impl OcrWindow {
         self.frame_count += 1;
     }
 
-    // TODO: controller input
-    // TODO: allow scrolling the text and definition panes
-    // TODO: clean up that whole function tbh
     fn handle_input(&mut self, ctx: &egui::Context, services: &mut Services) -> Result<()> {
         let State::Ready(state) = &mut self.state else {
             panic!("invariant broken: handle_input should only be called when self.state is Some!");
         };
 
-        fn move_h(
-            direction: i32,
-            selected_word: (usize, usize),
-            words: &Vec<Vec<Word>>,
-            _word_rects: &HashMap<(usize, usize), Rect>,
-        ) -> Option<(usize, usize)> {
-            let mut cursor = (selected_word.0 as i32, selected_word.1 as i32);
-            loop {
-                cursor.1 += direction;
-                if cursor.1 < 0 {
-                    cursor.0 = i32::max(0, cursor.0 - 1);
-                    cursor.1 = words[cursor.0 as usize].len() as i32 - 1;
-                } else if cursor.1 >= words[cursor.0 as usize].len() as i32 {
-                    cursor.0 = i32::min(cursor.0 + 1, words.len() as i32 - 1);
-                    cursor.1 = 0;
-                }
+        state.input_state.update(ctx, &mut self.gilrs);
 
-                if words[cursor.0 as usize][cursor.1 as usize]
-                    .definition
-                    .is_some()
-                {
-                    return Some((cursor.0 as usize, cursor.1 as usize));
-                }
+        let skip_irrelevant_words = state.input_state.skip_irrelevant.is_pressed();
 
-                if cursor == (0, 0) {
-                    return None;
-                } else if (words.len() - 1, words.last().unwrap().len() - 1)
-                    == (cursor.0 as usize, cursor.1 as usize)
-                {
-                    return None;
-                }
-            }
-        }
-
-        fn move_v(
-            direction: i32,
-            selected_word: (usize, usize),
-            words: &Vec<Vec<Word>>,
-            word_rects: &HashMap<(usize, usize), Rect>,
-        ) -> Option<(usize, usize)> {
-            let current_rect = word_rects.get(&selected_word).copied().unwrap();
-
-            let filter = |(_, rect): &(_, &Rect)| {
-                if direction.is_negative() {
-                    rect.bottom() < current_rect.bottom()
-                } else {
-                    rect.bottom() > current_rect.bottom()
-                }
-            };
-
-            word_rects
-                .iter()
-                .filter(|(idx, _)| words[idx.0][idx.1].definition.is_some())
-                .filter(filter)
-                .map(|(idx, rect)| (idx, rect.center().distance(current_rect.center())))
-                .min_by(|(_, dist1), (_, dist2)| dist1.total_cmp(dist2))
-                .map(|(idx, _)| *idx)
-        }
-
-        // ugly ass autoformat
-        let mut skip_irrelevant = |should_skip: bool,
-                                   direction: i32,
-                                   f: fn(
-            i32,
-            (usize, usize),
-            &Vec<Vec<Word>>,
-            &HashMap<(usize, usize), Rect>,
-        ) -> Option<(usize, usize)>| {
-            if !should_skip {
-                f(
-                    direction,
-                    state.selected_word,
-                    &state.words,
-                    &state.word_rects,
-                )
-                .map(|idx| state.selected_word = idx);
+        let word_is_valid = |word: &Word| {
+            if skip_irrelevant_words {
+                word.definition
+                    .as_ref()
+                    .map(|definition| {
+                        RELEVANT_CARD_STATES.contains(&definition.card_state.as_str())
+                    })
+                    .unwrap_or(false)
             } else {
-                // TODO: make vertical skip irrelevant more intuitive
-                let word_count = state.words.iter().map(|v| v.iter()).flatten().count();
-                // NOTE: the upper bound is a workaround for the alg going into an infinite loop sometimes. need to revise this at some point
-                for _ in 0..word_count {
-                    let new = f(
-                        direction,
-                        state.selected_word,
-                        &state.words,
-                        &state.word_rects,
-                    )
-                    .map(|idx| state.selected_word = idx);
-                    if new.is_none() {
+                word.definition.is_some()
+            }
+        };
+
+        fn checked_add(n: &mut usize, delta: i32, max_exclusive: usize) -> bool {
+            let ok = (0..max_exclusive as i32).contains(&(*n as i32 + delta));
+            if ok {
+                *n = (*n as i32 + delta) as usize;
+            }
+            !ok
+        }
+
+        let move_h = |state: &mut ReadyState, delta| {
+            let mut cursor = state.selected_word;
+            loop {
+                let overflowed = checked_add(&mut cursor.1, delta, state.words[cursor.0].len());
+
+                if overflowed && delta.is_negative() {
+                    if cursor.0 == 0 {
                         break;
+                    } else {
+                        cursor.0 = cursor.0.saturating_sub((-delta) as usize);
+                        cursor.1 = state.words[cursor.0].len() - 1;
                     }
-                    if RELEVANT_CARD_STATES.contains(
-                        &state.words[state.selected_word.0][state.selected_word.1]
-                            .definition
-                            .as_ref()
-                            .unwrap()
-                            .card_state
-                            .as_str(),
-                    ) {
+                }
+                if overflowed && delta.is_positive() {
+                    if cursor.0 == state.words.len() - 1 {
                         break;
+                    } else {
+                        cursor.0 = usize::min(state.words.len() - 1, cursor.0 + 1);
+                        cursor.1 = 0;
                     }
+                }
+
+                if word_is_valid(&state.words[cursor.0][cursor.1]) {
+                    state.selected_word = cursor;
+                    break;
                 }
             }
         };
 
-        let should_skip = ctx.input(|input| {
-            input.modifiers.shift
-                || input.pointer.button_down(egui::PointerButton::Primary)
-                || self
-                    .gilrs
-                    .gamepads()
-                    .nth(0)
-                    .map(|gamepad| gamepad.1.is_pressed(gilrs::Button::RightTrigger2))
-                    .unwrap_or(false)
-        });
+        let move_v = |state: &mut ReadyState, direction: i32| {
+            let current_rect = state.word_rects.get(&state.selected_word).copied().unwrap();
 
-        let mut add_to_deck = false;
+            state
+                .word_rects
+                .iter()
+                .filter(|(idx, _)| state.words[idx.0][idx.1].definition.is_some())
+                .filter(|(_, rect)| {
+                    if direction.is_negative() {
+                        rect.bottom() < current_rect.bottom()
+                    } else {
+                        rect.bottom() > current_rect.bottom()
+                    }
+                })
+                .map(|(idx, rect)| (idx, rect.center().distance(current_rect.center())))
+                .min_by(|(_, dist1), (_, dist2)| dist1.total_cmp(dist2))
+                .map(|(idx, _)| state.selected_word = *idx);
+        };
+
         state.scroll_to_current_word_requested = false;
 
-        ctx.input(|input| {
-            if input.key_pressed(egui::Key::ArrowLeft) {
-                skip_irrelevant(should_skip, -1, move_h);
-                state.scroll_to_current_word_requested = true;
-            }
-            if input.key_pressed(egui::Key::ArrowRight) {
-                skip_irrelevant(should_skip, 1, move_h);
-                state.scroll_to_current_word_requested = true;
-            }
-            if input.key_pressed(egui::Key::ArrowUp) {
-                skip_irrelevant(should_skip, -1, move_v);
-                state.scroll_to_current_word_requested = true;
-            }
-            if input.key_pressed(egui::Key::ArrowDown) {
-                skip_irrelevant(should_skip, 1, move_v);
-                state.scroll_to_current_word_requested = true;
-            }
-            if input.key_pressed(egui::Key::Escape) {
-                self.close_requested = true;
-            }
-            if input.key_pressed(egui::Key::Enter) {
-                add_to_deck = true;
-            }
-        });
+        if state.input_state.left.was_pressed_with_retrigger() {
+            move_h(state, -1);
+            state.scroll_to_current_word_requested = true;
+        }
 
-        if add_to_deck {
-            let word = state.words[state.selected_word.0][state.selected_word.1].clone();
+        if state.input_state.right.was_pressed_with_retrigger() {
+            move_h(state, 1);
+            state.scroll_to_current_word_requested = true;
+        }
 
+        if state.input_state.up.was_pressed_with_retrigger() {
+            move_v(state, -1);
+            if state.input_state.skip_irrelevant.is_pressed() {
+                move_h(state, -1);
+            }
+            state.scroll_to_current_word_requested = true;
+        }
+
+        if state.input_state.down.was_pressed_with_retrigger() {
+            move_v(state, 1);
+            if state.input_state.skip_irrelevant.is_pressed() {
+                move_h(state, 1);
+            }
+            state.scroll_to_current_word_requested = true;
+        }
+
+        if state.input_state.exit.was_pressed() {
+            self.close_requested = true;
+        }
+
+        if state.input_state.add_to_deck.was_pressed() {
+            let word = state.selected_word().clone();
             let job = services.srs.add_to_deck(&word);
-
             state.add_to_deck_job = Some((state.selected_word, job));
         }
+
+        // TODO left/right stick scrolling
 
         Ok(())
     }

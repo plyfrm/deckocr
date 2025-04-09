@@ -19,11 +19,15 @@ pub mod ocr_window;
 pub mod service;
 
 const WINDOW_TITLE: &str = concat!(env!("CARGO_PKG_NAME"), " ", env!("CARGO_PKG_VERSION"));
+const WINDOW_W: f32 = 400.0;
+const WINDOW_H_MIN: f32 = 300.0;
+const WINDOW_H_MAX: f32 = 720.0;
+const WINDOW_H: f32 = WINDOW_H_MIN + (WINDOW_H_MAX - WINDOW_H_MIN) / 2.0;
 
 fn main() -> Result<()> {
     pretty_env_logger::init();
 
-    // TODO: graceful error handling in main
+    // TODO: nicely show any errors returned from main to the user somehow
     eframe::run_native(
         "app_name",
         eframe::NativeOptions {
@@ -38,9 +42,9 @@ fn main() -> Result<()> {
                         rgba: logo.into_rgba8().into_vec(),
                     })
                 }),
-                inner_size: Some(vec2(400.0, 600.0)),
-                min_inner_size: Some(vec2(400.0, 200.0)),
-                max_inner_size: Some(vec2(400.0, 800.0)),
+                inner_size: Some(vec2(WINDOW_W, WINDOW_H)),
+                min_inner_size: Some(vec2(WINDOW_W, WINDOW_H_MIN)),
+                max_inner_size: Some(vec2(WINDOW_W, WINDOW_H_MAX)),
                 ..Default::default()
             },
             ..Default::default()

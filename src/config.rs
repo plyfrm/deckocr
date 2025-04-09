@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fs::File};
 
 use anyhow::{anyhow, Context, Result};
-use eframe::egui;
+use eframe::egui::{self};
 use global_hotkey::hotkey;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 

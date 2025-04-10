@@ -2,6 +2,8 @@
 
 OCR front-end, primarily for the Steam Deck.
 
+**Downloads**: [CLICK HERE](https://github.com/plyfrm/deckocr/releases)
+
 ## Features
 
 - Full keyboard/controller navigation

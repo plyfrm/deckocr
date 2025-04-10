@@ -13,6 +13,8 @@ struct Popup {
 impl Popups {
     /// Show a new error message to the user.
     pub fn error(&mut self, e: anyhow::Error) {
+        log::error!("Creating new popup for error: {e}");
+
         let mut s = format!("Error: {e}\n");
 
         for (idx, error) in e.chain().enumerate().skip(1) {
@@ -66,8 +68,9 @@ impl Popups {
                             });
                     });
 
-                    if ctx.input(|input| input.viewport().close_requested()) {}
-                    close_popup = Some(idx);
+                    if ctx.input(|input| input.viewport().close_requested()) {
+                        close_popup = Some(idx);
+                    }
                 },
             );
         }

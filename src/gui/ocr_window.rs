@@ -223,7 +223,9 @@ impl OcrWindow {
             if let Some(job) = &mut state.add_to_deck_job {
                 match job.try_wait() {
                     Ok(None) => {}
-                    Ok(Some(Ok(_))) => {}
+                    Ok(Some(Ok(_))) => {
+                        state.add_to_deck_job = None;
+                    }
                     Err(e) | Ok(Some(Err(e))) => {
                         popups.error(e);
                         state.add_to_deck_job = None;

@@ -126,7 +126,7 @@ impl Config for JpdbSrsConfig {
                         egui::color_picker::color_edit_button_srgb(ui, &mut state.colour);
                         ui.label(&state.name);
                     });
-                    col2.checkbox(&mut state.is_relevant, "Is Relevant");
+                    col2.checkbox(&mut state.is_relevant, "is relevant").on_hover_text("The selection will skip over words not marked as\nrelevant when holding R2.");
                 }
             });
         });
@@ -185,6 +185,8 @@ impl SrsService for JpdbSrs {
             .spelling
             .clone();
 
+        let card_states = Arc::clone(&self.card_states_with_ids);
+
         ServiceJob::new(move || {
             let json: Value = attohttpc::post(API_URL_PARSE)
                 .bearer_auth(&config.api_key)
@@ -236,6 +238,8 @@ impl SrsService for JpdbSrs {
                 .context("JpdbSrs: Failed to send http request")?
                 .error_for_status()
                 .context("JpdbSrs: Response status code is not a success code")?;
+
+            card_states.insert((vid, sid), 2);
 
             Ok(())
         })

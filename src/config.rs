@@ -142,17 +142,31 @@ impl Config for AppConfig {
                 Some(self.hotkey_modifiers),
                 self.hotkey_keycode,
             )
-            .to_string().to_uppercase();
+            .to_string()
+            .to_uppercase();
 
             ui.horizontal(|ui| {
                 ui.label("OCR Hotkey: ");
                 ui.text_edit_singleline(&mut hotkey);
             });
-        }).response.on_disabled_hover_text(format!("Listening for a new hotkey is not currently supported. You can set your hotkey manually by editing {}", match std::env::consts::OS {
-            "linux" => "`~/.config/deckocr/config.json`.",
-            "windows" => "`%APPDATA%/deckocr/config.json`.",
-            _ => "`deckocr/config.json` in your config directory."
-        }));
+        });
+
+        let mut config_path = dirs::config_dir().unwrap();
+        config_path.push("deckocr");
+        config_path.push("config.json");
+
+        ui.label(format!("Listening for a new hotkey is not currently suppported. Please set it by manually editing the configuration file at `{}`.", config_path.display()));
+        ui.label("You can find the supported keywords on the following pages:");
+        ui.horizontal(|ui| {
+            ui.hyperlink_to(
+                "Key Codes",
+                "https://w3c.github.io/uievents-code/#key-alphanumeric-section",
+            );
+            ui.hyperlink_to(
+                "Modifier Keys",
+                "https://w3c.github.io/uievents-key/#keys-modifier",
+            );
+        });
 
         ui.add_space(spacing);
 

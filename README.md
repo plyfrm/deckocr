@@ -15,15 +15,15 @@ OCR front-end, primarily for the Steam Deck.
 
 ## Screenshots
 
-![Example showing the program running with ghostpia](screenshots/ghostpia.png)
+<img src="screenshots/ghostpia.png" width=50% height=50%>
+<img src="screenshots/ruina.png" width=50% height=50%>
 
 ## FAQ
 
-### Can I use this on a regular desktop computer?
+### Can I use this on a desktop computer?
 
 Yes, although the user experience is mostly designed for use on handheld gaming computers.
-Improving regular desktop usage is something I would like to do, but it is not a primary goal of the
-project and would require a host of new features, so do not expect it anytime soon.
+Improving desktop usage is not totally outside the scope of this project, but it is not a priority as of now.
 
 ### Will any new services be added?
 

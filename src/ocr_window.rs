@@ -30,7 +30,6 @@ pub struct OcrWindow {
     pub config: AppConfig,
     pub gilrs: Gilrs,
 
-    // still loading if some
     pub state: State,
 
     pub frame_count: u32,
@@ -691,13 +690,13 @@ impl OcrWindow {
         }
 
         fn bottom_bar_ui(_win: &mut OcrWindow, ui: &mut egui::Ui) {
-            let dpad = egui::include_image!("../assets/controller_icons/sharerd-D-PAD.svg");
+            let dpad = egui::include_image!("../assets/controller_icons/steamdeck_dpad.svg");
             let rtrigger =
-                egui::include_image!("../assets/controller_icons/shared-Right Trigger.svg");
-            let a = egui::include_image!("../assets/controller_icons/shared-A.svg");
-            let b = egui::include_image!("../assets/controller_icons/shared-B.svg");
+                egui::include_image!("../assets/controller_icons/steamdeck_button_r2.svg");
+            let a = egui::include_image!("../assets/controller_icons/steamdeck_button_a.svg");
+            let b = egui::include_image!("../assets/controller_icons/steamdeck_button_b.svg");
 
-            let glyph_size = 32.0;
+            let glyph_size = 48.0;
             let text_size = 20.0;
             let spacing = 24.0;
 
@@ -722,12 +721,10 @@ impl OcrWindow {
                     |ui| {
                         ui.add_space(spacing);
                         add_glyph(ui, dpad);
-                        ui.add_space(spacing / 2.0);
                         add_label(ui, "MOVE SELECTION");
 
                         ui.add_space(spacing);
                         add_glyph(ui, rtrigger);
-                        ui.add_space(spacing / 2.0);
                         add_label(ui, "SKIP IRRELEVANT WORDS");
                     },
                 );
@@ -737,12 +734,10 @@ impl OcrWindow {
                     |ui| {
                         ui.add_space(spacing);
                         add_label(ui, "EXIT");
-                        ui.add_space(spacing / 2.0);
                         add_glyph(ui, b);
 
                         ui.add_space(spacing);
                         add_label(ui, "ADD TO DECK");
-                        ui.add_space(spacing / 2.0);
                         add_glyph(ui, a);
                     },
                 );

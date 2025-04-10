@@ -35,7 +35,7 @@ sees contributions.
 
 This project uses assets from the following:
 
-- [AL2009man's Gamepad Prompt Asset Pack](https://github.com/AL2009man/Gamepad-Prompt-Asset-Pack)
+- [kenney's Input Prompts Assets](https://www.kenney.nl/assets/input-prompts)
 - [M+ FONTS](https://github.com/coz-m/MPLUS_FONTS)
 
 And interfaces with the following projects:

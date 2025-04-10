@@ -23,9 +23,6 @@ use input_state::*;
 mod text_with_ruby_widget;
 use text_with_ruby_widget::*;
 
-/// Holding the skip button will automatically skip to those words
-const RELEVANT_CARD_STATES: &[&str] = &["not in deck", "new", "learning", "due", "failed"];
-
 pub struct OcrWindow {
     pub close_requested: bool,
 
@@ -41,13 +38,17 @@ pub struct OcrWindow {
 pub enum State {
     LoadingOcr(OcrServiceJob),
     LoadingDictionary(DictionaryServiceJob),
+    LoadingSrs {
+        words: Vec<Vec<Word>>,
+        job: ServiceJob<Result<()>>,
+    },
     Ready(ReadyState),
 }
 
 impl State {
     pub fn is_loading(&self) -> bool {
         match self {
-            Self::LoadingOcr(_) | Self::LoadingDictionary(_) => true,
+            Self::LoadingOcr(_) | Self::LoadingDictionary(_) | Self::LoadingSrs { .. } => true,
             Self::Ready(_) => false,
         }
     }
@@ -62,7 +63,7 @@ pub struct ReadyState {
     pub selected_word: (usize, usize),
     pub scroll_to_current_word_requested: bool,
 
-    pub add_to_deck_job: Option<((usize, usize), ServiceJob<Result<()>>)>,
+    pub add_to_deck_job: Option<ServiceJob<Result<()>>>,
 }
 
 impl ReadyState {
@@ -114,10 +115,7 @@ impl OcrWindow {
     }
 
     pub fn is_loading(&self) -> bool {
-        match &self.state {
-            State::LoadingDictionary(_) | State::LoadingOcr(_) => true,
-            State::Ready(_) => false,
-        }
+        self.state.is_loading()
     }
 
     pub fn manage_loading(&mut self, services: &mut Services) -> Result<()> {
@@ -143,6 +141,22 @@ impl OcrWindow {
             {
                 None => {}
                 Some(words) => {
+                    self.state = State::LoadingSrs {
+                        job: services
+                            .srs
+                            .load_card_states(words.iter().flatten().cloned().collect()),
+                        words,
+                    };
+                }
+            },
+            State::LoadingSrs { words, job } => match job
+                .try_wait()
+                .unwrap()
+                .transpose()
+                .context("SRS ServiceJob returned an error")?
+            {
+                None => {}
+                Some(_) => {
                     // set selected word to the first word with a definition
                     let mut selected_word = (0, 0);
                     'outer: for (i, paragraph) in words.iter().enumerate() {
@@ -153,9 +167,10 @@ impl OcrWindow {
                             }
                         }
                     }
+
                     self.state = State::Ready(ReadyState {
                         input_state: Default::default(),
-                        words,
+                        words: std::mem::take(words),
                         word_rects: Default::default(),
                         selected_word,
                         scroll_to_current_word_requested: false,
@@ -189,23 +204,16 @@ impl OcrWindow {
             return;
         }
 
-        // update card state if a card was added to the user's deck
+        // show errors if add_to_deck_job has failed
         if let State::Ready(state) = &mut self.state {
-            if let Some(((paragraph_idx, word_idx), job)) = &mut state.add_to_deck_job {
+            if let Some(job) = &mut state.add_to_deck_job {
                 match job.try_wait() {
-                    Ok(Some(_)) => {
-                        state.words[*paragraph_idx][*word_idx]
-                            .definition
-                            .as_mut()
-                            .unwrap()
-                            .card_state = "new".to_owned();
-                        state.add_to_deck_job = None;
-                    }
-                    Err(e) => {
+                    Ok(None) => {}
+                    Ok(Some(Ok(_))) => {}
+                    Err(e) | Ok(Some(Err(e))) => {
                         popups.error(e);
                         state.add_to_deck_job = None;
                     }
-                    _ => {}
                 }
             }
         }
@@ -251,7 +259,7 @@ impl OcrWindow {
                             );
                         });
                     } else {
-                        self.show_ui(ui);
+                        self.show_ui(ui, services);
 
                         if let Err(e) = self.handle_input(ctx, services) {
                             popups.error(e);
@@ -281,12 +289,7 @@ impl OcrWindow {
 
         let word_is_valid = |word: &Word| {
             if skip_irrelevant_words {
-                word.definition
-                    .as_ref()
-                    .map(|definition| {
-                        RELEVANT_CARD_STATES.contains(&definition.card_state.as_str())
-                    })
-                    .unwrap_or(false)
+                services.srs.card_state(word).is_relevant
             } else {
                 word.definition.is_some()
             }
@@ -382,8 +385,7 @@ impl OcrWindow {
 
         if state.input_state.add_to_deck.was_pressed() {
             let word = state.selected_word().clone();
-            let job = services.srs.add_to_deck(&word);
-            state.add_to_deck_job = Some((state.selected_word, job));
+            state.add_to_deck_job = Some(services.srs.add_to_deck(&word));
         }
 
         // TODO left/right stick scrolling
@@ -391,7 +393,7 @@ impl OcrWindow {
         Ok(())
     }
 
-    fn show_ui(&mut self, ui: &mut egui::Ui) {
+    fn show_ui(&mut self, ui: &mut egui::Ui, services: &Services) {
         let padding_h = 32.0;
         let padding_v = padding_h / 2.0;
         let bottom_bar = 64.0;
@@ -414,11 +416,11 @@ impl OcrWindow {
                         .horizontal(|mut strip| {
                             strip.empty();
 
-                            strip.cell(|ui| text_panel_ui(self, ui));
+                            strip.cell(|ui| text_panel_ui(self, ui, services));
 
                             strip.empty();
 
-                            strip.cell(|ui| definition_panel_ui(self, ui));
+                            strip.cell(|ui| definition_panel_ui(self, ui, services));
 
                             strip.empty();
                         });
@@ -427,7 +429,7 @@ impl OcrWindow {
                 strip.cell(|ui| bottom_bar_ui(self, ui));
             });
 
-        fn text_panel_ui(win: &mut OcrWindow, ui: &mut egui::Ui) {
+        fn text_panel_ui(win: &mut OcrWindow, ui: &mut egui::Ui, services: &Services) {
             let State::Ready(state) = &mut win.state else {
                 panic!("invariant broken: show_without_rects should only be called when self.state is Some!");
             };
@@ -451,14 +453,10 @@ impl OcrWindow {
 
                         ui.horizontal_wrapped(|ui| {
                             for (word_idx, word) in paragraph.iter().enumerate() {
-                                let colour = word
-                                    .definition
-                                    .as_ref()
-                                    .map(|def| win.config.card_colours.get(&def.card_state))
-                                    .flatten()
-                                    .copied()
-                                    .map(|[r, g, b]| Color32::from_rgb(r, g, b))
-                                    .unwrap_or(Color32::WHITE);
+                                let colour = {
+                                    let [r, g, b] = services.srs.card_state(word).colour;
+                                    Color32::from_rgb(r, g, b)
+                                };
 
                                 let rect = ui
                                     .add(
@@ -498,7 +496,7 @@ impl OcrWindow {
                 });
         }
 
-        fn definition_panel_ui(win: &mut OcrWindow, ui: &mut egui::Ui) {
+        fn definition_panel_ui(win: &mut OcrWindow, ui: &mut egui::Ui, services: &Services) {
             let State::Ready(state) = &mut win.state else {
                 panic!("invariant broken: show_without_rects should only be called when self.state is Some!");
             };
@@ -509,16 +507,16 @@ impl OcrWindow {
                     let spelling_size = 64.0;
                     let text_size = 24.0;
 
-                    let card_colour = win
-                        .config
-                        .card_colours
-                        .get(&word.card_state)
-                        .map(|&[r, g, b]| Color32::from_rgb(r, g, b))
-                        .unwrap_or(Color32::WHITE);
+                    let card_state = services.srs.card_state(state.selected_word());
+
+                    let card_colour = {
+                        let [r, g, b] = card_state.colour;
+                        Color32::from_rgb(r, g, b)
+                    };
 
                     ui.columns_const(|[col1, col2]| {
                         col1.add(egui::Label::new(
-                            egui::RichText::new(&word.card_state)
+                            egui::RichText::new(&card_state.name)
                                 .size(text_size)
                                 .color(card_colour),
                         ));

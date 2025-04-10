@@ -88,8 +88,7 @@ impl DictionaryService for JpdbDictionary {
                         "spelling",
                         "reading",
                         "frequency_rank",
-                        "meanings",
-                        "card_state"
+                        "meanings"
                     ]
                 }))
                 .unwrap()
@@ -158,13 +157,12 @@ impl DictionaryService for JpdbDictionary {
             })?;
 
             struct Vocabulary {
-                _vid: u64,
-                _sid: u64,
+                vid: u64,
+                sid: u64,
                 spelling: String,
                 reading: String,
                 frequency: Option<u64>,
                 meanings: Vec<String>,
-                card_state: Option<String>,
             }
 
             let mut vocab = Vec::new();
@@ -172,8 +170,8 @@ impl DictionaryService for JpdbDictionary {
             (|| {
                 for word in vocab_json {
                     let vocab_data = Vocabulary {
-                        _vid: word.get(0)?.as_u64()?,
-                        _sid: word.get(1)?.as_u64()?,
+                        vid: word.get(0)?.as_u64()?,
+                        sid: word.get(1)?.as_u64()?,
                         spelling: word.get(2)?.as_str()?.to_owned(),
                         reading: word.get(3)?.as_str()?.to_owned(),
                         frequency: word.get(4)?.as_u64(),
@@ -185,11 +183,6 @@ impl DictionaryService for JpdbDictionary {
                             .flatten()
                             .map(str::to_owned)
                             .collect(),
-                        card_state: word
-                            .get(6)?
-                            .get(0)
-                            .map(|v| v.as_str().map(str::to_owned))
-                            .flatten(),
                     };
 
                     vocab.push(vocab_data);
@@ -233,10 +226,10 @@ impl DictionaryService for JpdbDictionary {
                         reading: vocab[token.vocab_index].reading.clone(),
                         frequency: vocab[token.vocab_index].frequency,
                         meanings: vocab[token.vocab_index].meanings.clone(),
-                        card_state: vocab[token.vocab_index]
-                            .card_state
-                            .clone()
-                            .unwrap_or_else(|| "not in deck".to_owned()),
+                        jpdb_vid_sid: Some((
+                            vocab[token.vocab_index].vid,
+                            vocab[token.vocab_index].sid,
+                        )),
                     });
                     vec.push(Word { text, definition });
 

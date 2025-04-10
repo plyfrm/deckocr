@@ -10,7 +10,8 @@ pub struct Definition {
     pub reading: String,
     pub frequency: Option<u64>,
     pub meanings: Vec<String>,
-    pub card_state: String,
+
+    pub jpdb_vid_sid: Option<(u64, u64)>,
 }
 
 #[derive(Debug, Hash, Clone)]

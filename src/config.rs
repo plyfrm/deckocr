@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs::File};
+use std::fs::File;
 
 use anyhow::{anyhow, Context, Result};
 use eframe::egui::{self};
@@ -10,15 +10,6 @@ use crate::services::{
     ocr::{owocr::Owocr, OcrService},
     srs::{jpdb_srs::JpdbSrs, SrsService},
 };
-
-const CARD_STATE_DEFAULTS: &[(&str, [u8; 3])] = &[
-    ("not in deck", [0, 200, 255]),
-    ("new", [170, 240, 255]),
-    ("learning", [170, 240, 255]),
-    ("due", [255, 75, 60]),
-    ("known", [125, 255, 125]),
-    ("blacklisted", [192, 192, 192]),
-];
 
 pub trait Config: Serialize + DeserializeOwned + Default {
     fn path() -> &'static str;
@@ -102,17 +93,10 @@ pub struct AppConfig {
     pub window_width: u32,
     pub window_height: u32,
     pub background_dimming: u8,
-
-    pub card_colours: HashMap<String, [u8; 3]>,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
-        let mut card_colours = HashMap::new();
-        for (card_state, srgb) in CARD_STATE_DEFAULTS {
-            card_colours.insert((*card_state).to_owned(), *srgb);
-        }
-
         Self {
             hotkey_modifiers: hotkey::Modifiers::ALT,
             hotkey_keycode: hotkey::Code::F12,
@@ -126,8 +110,6 @@ impl Default for AppConfig {
             window_width: 1280,
             window_height: 720,
             background_dimming: 204,
-
-            card_colours,
         }
     }
 }
@@ -231,19 +213,6 @@ impl Config for AppConfig {
                             .map(|n: f64| n * 255.0 / 100.0)
                     }),
             );
-        });
-
-        ui.add_space(spacing);
-
-        ui.collapsing("Word Colours", |ui| {
-            for (card_state, _) in CARD_STATE_DEFAULTS {
-                if let Some(srgb) = self.card_colours.get_mut(*card_state) {
-                    ui.horizontal(|ui| {
-                        egui::color_picker::color_edit_button_srgb(ui, srgb);
-                        ui.label(*card_state);
-                    });
-                }
-            }
         });
     }
 }

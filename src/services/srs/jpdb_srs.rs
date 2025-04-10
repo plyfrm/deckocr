@@ -290,15 +290,17 @@ impl SrsService for JpdbSrs {
 
                 for (value, spelling) in ids_and_states.iter().zip(words_without_ids) {
                     (|| -> Option<()> {
-                        let state_name = value.get(0)?.as_str()?;
-
-                        if let Some((idx, _)) = config
-                            .card_states
-                            .iter()
-                            .enumerate()
-                            .find(|(_, state)| state.name == state_name)
-                        {
-                            map_without_ids.insert(spelling, idx);
+                        if let Some(state_name) = value.get(0)?.as_str() {
+                            if let Some((idx, _)) = config
+                                .card_states
+                                .iter()
+                                .enumerate()
+                                .find(|(_, state)| state.name == state_name)
+                            {
+                                map_without_ids.insert(spelling, idx);
+                            }
+                        } else {
+                            map_without_ids.insert(spelling, 1);
                         }
 
                         Some(())

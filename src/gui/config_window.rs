@@ -2,6 +2,7 @@ use eframe::egui;
 
 use crate::{config::Config, services::Services, EframeApp};
 
+/// The main configuration window, shown when deckocr is first started.
 pub fn show_config_window(app: &mut EframeApp, ctx: &egui::Context) {
     egui::CentralPanel::default().show(ctx, |ui| {
         egui_extras::StripBuilder::new(ui)

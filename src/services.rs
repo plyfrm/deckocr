@@ -11,6 +11,7 @@ pub mod dictionary;
 pub mod ocr;
 pub mod srs;
 
+/// Holds instanciated services.
 pub struct Services {
     pub ocr: Box<dyn OcrService>,
     pub dictionary: Box<dyn DictionaryService>,
@@ -18,6 +19,7 @@ pub struct Services {
 }
 
 impl Services {
+    /// Create a new `Services` from the services specified in the given `AppConfig`.
     pub fn new(config: &AppConfig) -> Result<Self> {
         let mut services = Self {
             ocr: config.ocr_service.create_service(),
@@ -51,6 +53,7 @@ pub struct ServiceJob<T> {
     handle: Option<JoinHandle<T>>,
 }
 
+/// A job being performed by a service. May or may not be finished.
 impl<T: Send + 'static> ServiceJob<T> {
     pub fn new<F: FnOnce() -> T + Send + 'static>(f: F) -> Self {
         std::thread::spawn(f).into()
@@ -58,6 +61,11 @@ impl<T: Send + 'static> ServiceJob<T> {
 }
 
 impl<T> ServiceJob<T> {
+    /// Get the return value of this `ServiceJob` if it was finished.
+    ///
+    /// - Returns `Err` if the job has already finished and its return value was taken previously;
+    /// - Returns `Ok(None) if the job has not finished yet;
+    /// - Returns `Ok(Some(T))` if the job has finished.
     pub fn try_wait(&mut self) -> Result<Option<T>> {
         match &self.handle {
             None => Err(anyhow!("job already finished")),
@@ -69,6 +77,10 @@ impl<T> ServiceJob<T> {
         }
     }
 
+    /// Wait for the job to finish and return its return value.
+    ///
+    /// - Returns `Err` if the job has already finished (eg. by calling `try_wait()`) and its return value was taken previously;
+    /// - Returns `Ok(T) if the job has finished.
     pub fn wait(self) -> Result<T> {
         match self.handle {
             None => Err(anyhow!("job already finished")),

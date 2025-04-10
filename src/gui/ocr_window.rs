@@ -23,6 +23,7 @@ use input_state::*;
 mod text_with_ruby_widget;
 use text_with_ruby_widget::*;
 
+/// The OCR window, shown when the user presses the OCR hotkey.
 pub struct OcrWindow {
     pub close_requested: bool,
 
@@ -35,17 +36,23 @@ pub struct OcrWindow {
     pub frame_count: u32,
 }
 
+/// The `OcrWindow`'s current state.
 pub enum State {
+    /// Waiting on the OCR service.
     LoadingOcr(OcrServiceJob),
+    /// Waiting on the dictionary service.
     LoadingDictionary(DictionaryServiceJob),
+    /// Waiting on the SRS service.
     LoadingSrs {
         words: Vec<Vec<Word>>,
         job: ServiceJob<Result<()>>,
     },
+    /// The UI is ready to be shown.
     Ready(ReadyState),
 }
 
 impl State {
+    /// Whether we are still waiting on data from services.
     pub fn is_loading(&self) -> bool {
         match self {
             Self::LoadingOcr(_) | Self::LoadingDictionary(_) | Self::LoadingSrs { .. } => true,
@@ -54,29 +61,38 @@ impl State {
     }
 }
 
+/// The OCR window's state, after all the data has been loaded.
 pub struct ReadyState {
     input_state: InputState,
 
+    /// List of paragraphs, represented as lists of words with definitions.
     pub words: Vec<Vec<Word>>,
-    pub word_rects: HashMap<(usize, usize), Rect>, // used for finding next word on user input
+    /// How the words are laid out on the screen (used for finding the closest word when moving up or down).
+    pub word_rects: HashMap<(usize, usize), Rect>,
 
+    /// Index of the word currently selected by the user.
     pub selected_word: (usize, usize),
+    /// Whether we should scroll to the currently selected word on this frame.
     pub scroll_to_current_word_requested: bool,
 
+    /// Job created when the user adds a new word to their deck.
     pub add_to_deck_job: Option<ServiceJob<Result<()>>>,
 }
 
 impl ReadyState {
+    /// Returns a reference to the currently selected word.
     pub fn selected_word(&self) -> &Word {
         &self.words[self.selected_word.0][self.selected_word.1]
     }
 
+    /// Returns a mutable reference to the currently selected word.
     pub fn selected_word_mut(&mut self) -> &mut Word {
         &mut self.words[self.selected_word.0][self.selected_word.1]
     }
 }
 
 impl OcrWindow {
+    /// Create a new `OcrWindow` and start querying data from services.
     pub fn new(
         ctx: &egui::Context,
         config: AppConfig,
@@ -114,10 +130,7 @@ impl OcrWindow {
         }
     }
 
-    pub fn is_loading(&self) -> bool {
-        self.state.is_loading()
-    }
-
+    /// Manages the `OcrWindow`'s state while it is still loading.
     pub fn manage_loading(&mut self, services: &mut Services) -> Result<()> {
         match &mut self.state {
             State::Ready(_) => {}
@@ -183,6 +196,7 @@ impl OcrWindow {
         Ok(())
     }
 
+    /// Show the window to the user.
     pub fn show(
         &mut self,
         ctx: &egui::Context,
@@ -278,6 +292,7 @@ impl OcrWindow {
         self.frame_count += 1;
     }
 
+    /// Updates the window's state based on the user's input.
     fn handle_input(&mut self, ctx: &egui::Context, services: &mut Services) -> Result<()> {
         let State::Ready(state) = &mut self.state else {
             panic!("invariant broken: handle_input should only be called when self.state is Some!");
@@ -393,6 +408,7 @@ impl OcrWindow {
         Ok(())
     }
 
+    /// Show the inner UI of the window, once it has loaded.
     fn show_ui(&mut self, ui: &mut egui::Ui, services: &Services) {
         let padding_h = 32.0;
         let padding_v = padding_h / 2.0;

@@ -1,5 +1,6 @@
 use eframe::egui::{self, vec2};
 
+/// A stack of popups which should be shown to the user (eg. for error messages).
 #[derive(Debug, Default)]
 pub struct Popups(Vec<Popup>);
 
@@ -10,6 +11,7 @@ struct Popup {
 }
 
 impl Popups {
+    /// Show a new error message to the user.
     pub fn error(&mut self, e: anyhow::Error) {
         let mut s = format!("Error: {e}\n");
 
@@ -23,6 +25,7 @@ impl Popups {
         });
     }
 
+    /// Show all currently held popups.
     pub fn show(&mut self, ctx: &egui::Context) {
         let mut close_popup = None;
 
@@ -62,6 +65,9 @@ impl Popups {
                                 });
                             });
                     });
+
+                    if ctx.input(|input| input.viewport().close_requested()) {}
+                    close_popup = Some(idx);
                 },
             );
         }

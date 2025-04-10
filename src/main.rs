@@ -105,11 +105,12 @@ impl EframeApp {
         })
     }
 
+    /// Runs when the OCR hotkey was pressed. Creates a new `OcrWindow` and sets it as the active OCR Window.
     pub fn trigger_ocr(&mut self, ctx: &egui::Context) -> Result<()> {
         let currently_loading = self
             .ocr_window
             .as_ref()
-            .map(|window| window.is_loading())
+            .map(|window| window.state.is_loading())
             .unwrap_or(false);
 
         // only trigger ocr if we are not currently loading an ocr window (eliminates some jankiness with steam input)

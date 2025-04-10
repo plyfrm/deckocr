@@ -11,11 +11,15 @@ use crate::services::{
     srs::{jpdb_srs::JpdbSrs, SrsService},
 };
 
+/// Represents a configuration file.
 pub trait Config: Serialize + DeserializeOwned + Default {
+    /// Relative path to the configuration file, assuming `./` is the deckocr configuration directory.
     fn path() -> &'static str;
+
+    /// Show the UI for editing this config.
     fn show_ui(&mut self, ui: &mut egui::Ui);
 
-    /// Loads a configuration file, or creates a default configuration struct if the file does not exist.
+    /// Load a configuration file, or create a default configuration struct if the file does not exist.
     fn load() -> Result<Self> {
         let mut config_path = dirs::config_dir()
             .ok_or_else(|| anyhow!("Could not find suitable config diractory"))?;
@@ -32,6 +36,7 @@ pub trait Config: Serialize + DeserializeOwned + Default {
                 )
             })?;
 
+            // TODO: contruct a value manually from serde_json::Value so that we can easily migrate from old versions
             let config = serde_json::from_reader(file).with_context(|| {
                 format!(
                     "Could not read configuration file: `{}`",
@@ -43,6 +48,7 @@ pub trait Config: Serialize + DeserializeOwned + Default {
         }
     }
 
+    /// Save a configuration file.
     fn save(&self) -> Result<()> {
         let mut config_path = dirs::config_dir()
             .ok_or_else(|| anyhow!("Could not find suitable config diractory"))?;
@@ -76,22 +82,30 @@ pub trait Config: Serialize + DeserializeOwned + Default {
     }
 }
 
+/// `deckocr`'s main configuration file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
-    // https://w3c.github.io/uievents-key/#keys-modifier
+    /// Modifiers for the OCR hotkey. Details: https://w3c.github.io/uievents-key/#keys-modifier
     pub hotkey_modifiers: hotkey::Modifiers,
-    // https://w3c.github.io/uievents-code/
+    /// Keycode for the OCR hotkey. Details: https://w3c.github.io/uievents-code/
     pub hotkey_keycode: hotkey::Code,
 
+    /// The OCR service selected by the user.
     pub ocr_service: OcrServiceList,
+    /// The dictionary service selected by the user.
     pub dictionary_service: DictionaryServiceList,
+    /// The SRS service selected by the user.
     pub srs_service: SrsServiceList,
 
-    // TODO: window size
+    /// The UI scaling for the whole app. Passed to `egui::Context::set_zoom_factor`.
     pub zoom_factor: f32,
+    /// Whether the OCR window should be shown in fullscreen.
     pub fullscreen: bool,
+    /// Width of the OCR window.
     pub window_width: u32,
+    /// Height of the OCR window.
     pub window_height: u32,
+    /// How dim should the screenshot shown in the background of the OCR window be.
     pub background_dimming: u8,
 }
 

@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 use eframe::egui;
 use gilrs::Gilrs;
 
+/// The current state of the user's input.
 #[derive(Debug, Default)]
 pub struct InputState {
     pub up: Key,
@@ -17,6 +18,7 @@ pub struct InputState {
 }
 
 impl InputState {
+    /// Update this `InputState` with data from egui and gilrs.
     pub fn update(&mut self, ctx: &egui::Context, gilrs: &mut Gilrs) {
         let update_key = |key: &mut Key, egui_key: egui::Key, gilrs_button: gilrs::Button| {
             let mut is_pressed = false;
@@ -63,6 +65,7 @@ impl InputState {
     }
 }
 
+/// A key's state. Also handles retrigger logic.
 #[derive(Debug)]
 pub struct Key {
     is_pressed: Option<Instant>,
@@ -81,6 +84,7 @@ impl Default for Key {
 }
 
 impl Key {
+    /// Set the current state of this key to `is_pressed`.
     fn change_state(&mut self, is_pressed: bool) {
         if !is_pressed && self.is_pressed.is_some() {
             self.is_pressed = None;
@@ -92,10 +96,12 @@ impl Key {
         }
     }
 
+    /// Whether the key is currently pressed.
     pub fn is_pressed(&self) -> bool {
         self.is_pressed.is_some()
     }
 
+    /// Whether the key was pressed on this frame.
     pub fn was_pressed(&mut self) -> bool {
         if self.is_pressed.is_some() && !self.was_consumed {
             self.was_consumed = true;
@@ -105,6 +111,7 @@ impl Key {
         }
     }
 
+    /// Whether the key was pressed on this frame, or should be retriggered if it is being held.
     pub fn was_pressed_with_retrigger(&mut self) -> bool {
         let delay_before_first_retrigger = Duration::from_millis(300);
         let delay_between_retriggers = Duration::from_millis(50);

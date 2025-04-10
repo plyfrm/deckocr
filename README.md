@@ -4,6 +4,13 @@ OCR front-end, primarily for the Steam Deck.
 
 **Downloads**: [CLICK HERE](https://github.com/plyfrm/deckocr/releases)
 
+## Usage
+
+deckocr is meant to be started in desktop mode, running in the background while you play your games (fullscreen supported).
+ 
+Pressing the OCR hotkey (`ALT+F12` by default) will then extract text from the screen and show a new window with
+the UI shown [below](#screenshots).
+
 ## Features
 
 - Full keyboard/controller navigation

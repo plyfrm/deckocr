@@ -35,7 +35,7 @@ sees contributions.
 
 This project uses assets from the following:
 
-- [kenney's Input Prompts Assets](https://www.kenney.nl/assets/input-prompts)
+- [Kenney's Input Prompts Assets](https://www.kenney.nl/assets/input-prompts)
 - [M+ FONTS](https://github.com/coz-m/MPLUS_FONTS)
 
 And interfaces with the following projects:

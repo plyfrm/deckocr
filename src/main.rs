@@ -42,6 +42,7 @@ fn main() -> Result<()> {
                         rgba: logo.into_rgba8().into_vec(),
                     })
                 }),
+                // TODO: update window size when UI scaling is changed
                 inner_size: Some(vec2(WINDOW_W, WINDOW_H)),
                 min_inner_size: Some(vec2(WINDOW_W, WINDOW_H_MIN)),
                 max_inner_size: Some(vec2(WINDOW_W, WINDOW_H_MAX)),

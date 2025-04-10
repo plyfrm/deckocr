@@ -6,10 +6,10 @@ OCR front-end, primarily for the Steam Deck.
 
 ## Usage
 
-deckocr is meant to be started in desktop mode, running in the background while you play your games (fullscreen supported).
+deckocr is meant to be started in desktop mode, running in the background while you play your games.
  
-Pressing the OCR hotkey (`ALT+F12` by default) will then extract text from the screen and show a new window with
-the UI shown [below](#screenshots).
+Pressing the OCR hotkey (`ALT+F12` by default) will then extract text from the screen and show a new window on top 
+of your game with the UI shown [below](#screenshots).
 
 ## Features
 

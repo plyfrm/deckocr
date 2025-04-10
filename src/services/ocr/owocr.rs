@@ -5,7 +5,7 @@ use eframe::egui;
 use image::{ImageFormat, RgbaImage};
 use serde::{Deserialize, Serialize};
 
-use crate::{config::Config, service::ServiceJob};
+use crate::{config::Config, services::ServiceJob};
 
 use super::{OcrResponse, OcrService};
 

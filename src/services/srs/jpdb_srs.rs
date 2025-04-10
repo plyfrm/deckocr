@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::config::Config;
-use crate::service::dictionary::Word;
-use crate::service::ServiceJob;
+use crate::services::ServiceJob;
+use crate::word::Word;
 
 use super::SrsService;
 

@@ -5,10 +5,8 @@ use serde_json::{json, Value};
 
 use crate::{
     config::Config,
-    service::{
-        dictionary::{Definition, TextFragment, TextWithRuby, Word},
-        ServiceJob,
-    },
+    services::ServiceJob,
+    word::{Definition, TextFragment, TextWithRuby, Word},
 };
 
 use super::DictionaryService;
@@ -210,10 +208,7 @@ impl DictionaryService for JpdbDictionary {
 
                 if tokens.is_empty() {
                     vec.push(Word {
-                        text: TextWithRuby(vec![TextFragment {
-                            text: (*text).clone(),
-                            ruby: None,
-                        }]),
+                        text: text.clone().into(),
                         definition: None,
                     });
                 }
@@ -222,10 +217,7 @@ impl DictionaryService for JpdbDictionary {
                     if token.position > cursor {
                         // next token is ahead of the cursor, unparsed text ahead
                         vec.push(Word {
-                            text: TextWithRuby(vec![TextFragment {
-                                text: text[cursor..token.position].to_owned(),
-                                ruby: None,
-                            }]),
+                            text: text[cursor..token.position].to_owned().into(),
                             definition: None,
                         });
                     }

@@ -8,11 +8,12 @@ use image::RgbaImage;
 
 use crate::{
     config::AppConfig,
-    service::{
-        dictionary::{DictionaryServiceJob, Word},
+    services::{
+        dictionary::DictionaryServiceJob,
         ocr::{OcrResponse, OcrServiceJob},
         ServiceJob, Services,
     },
+    word::Word,
     Popups, WINDOW_TITLE,
 };
 
@@ -562,11 +563,11 @@ impl OcrWindow {
         }
 
         fn bottom_bar_ui(_win: &mut OcrWindow, ui: &mut egui::Ui) {
-            let dpad = egui::include_image!("../assets/controller_icons/steamdeck_dpad.svg");
+            let dpad = egui::include_image!("../../assets/controller_icons/steamdeck_dpad.svg");
             let rtrigger =
-                egui::include_image!("../assets/controller_icons/steamdeck_button_r2.svg");
-            let a = egui::include_image!("../assets/controller_icons/steamdeck_button_a.svg");
-            let b = egui::include_image!("../assets/controller_icons/steamdeck_button_b.svg");
+                egui::include_image!("../../assets/controller_icons/steamdeck_button_r2.svg");
+            let a = egui::include_image!("../../assets/controller_icons/steamdeck_button_a.svg");
+            let b = egui::include_image!("../../assets/controller_icons/steamdeck_button_b.svg");
 
             let glyph_size = 48.0;
             let text_size = 20.0;

@@ -1,7 +1,9 @@
 use anyhow::Result;
 use eframe::egui;
 
-use super::{dictionary::Word, ServiceJob};
+use crate::word::Word;
+
+use super::ServiceJob;
 
 pub mod jpdb_srs;
 

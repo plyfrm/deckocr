@@ -5,15 +5,11 @@ use eframe::egui::{self};
 use global_hotkey::hotkey;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use crate::service::{
+use crate::services::{
     dictionary::{jpdb_dictionary::JpdbDictionary, DictionaryService},
     ocr::{owocr::Owocr, OcrService},
     srs::{jpdb_srs::JpdbSrs, SrsService},
 };
-
-// TODO: fix config issues
-// with each service's config being part of its trait, we currently cannot change the config gui
-// when the user changes which services they use
 
 const CARD_STATE_DEFAULTS: &[(&str, [u8; 3])] = &[
     ("not in deck", [0, 200, 255]),

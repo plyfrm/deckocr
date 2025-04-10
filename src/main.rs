@@ -1,7 +1,4 @@
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
 use config::{AppConfig, Config};
@@ -11,18 +8,19 @@ use eframe::{
     CreationContext,
 };
 use global_hotkey::{hotkey::HotKey, GlobalHotKeyEvent, GlobalHotKeyManager};
-use ocr_window::OcrWindow;
-use service::Services;
+use gui::{config_window::show_config_window, ocr_window::OcrWindow, popups::Popups};
+use services::Services;
 
 pub mod config;
-pub mod ocr_window;
-pub mod service;
+pub mod gui;
+pub mod services;
+pub mod word;
 
 const WINDOW_TITLE: &str = concat!(env!("CARGO_PKG_NAME"), " ", env!("CARGO_PKG_VERSION"));
 const WINDOW_W: f32 = 400.0;
+const WINDOW_H: f32 = 600.0;
 const WINDOW_H_MIN: f32 = 300.0;
 const WINDOW_H_MAX: f32 = 720.0;
-const WINDOW_H: f32 = WINDOW_H_MIN + (WINDOW_H_MAX - WINDOW_H_MIN) / 2.0;
 
 fn main() -> Result<()> {
     pretty_env_logger::init();
@@ -59,7 +57,7 @@ fn main() -> Result<()> {
     .map_err(|e| anyhow!("{e}"))
 }
 
-struct EframeApp {
+pub struct EframeApp {
     config: AppConfig,
     ocr_hotkey: HotKey,
     services: Services,
@@ -67,7 +65,6 @@ struct EframeApp {
     ocr_window: Option<OcrWindow>,
 
     popups: Popups,
-    last_repaint: std::time::Instant,
 }
 
 impl EframeApp {
@@ -105,7 +102,6 @@ impl EframeApp {
             ocr_window: None,
 
             popups: Default::default(),
-            last_repaint: Instant::now(),
         })
     }
 
@@ -149,15 +145,9 @@ impl eframe::App for EframeApp {
     }
 
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
-        // ideally we should only repaint when needed instead of limiting the framerate, but the hotkey can
-        // only be checked for on the same thread the event loop is running on so that limits our options.
-        std::thread::sleep(Duration::from_millis(16).saturating_sub(self.last_repaint.elapsed()));
-        ctx.request_repaint();
-        self.last_repaint = Instant::now();
+        ctx.request_repaint_after(Duration::from_millis(250));
 
         ctx.set_zoom_factor(self.config.zoom_factor);
-
-        self.popups.show(ctx);
 
         if let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
             if event.id == self.ocr_hotkey.id && event.state == global_hotkey::HotKeyState::Pressed
@@ -176,156 +166,8 @@ impl eframe::App for EframeApp {
             }
         }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            egui_extras::StripBuilder::new(ui)
-                .size(egui_extras::Size::remainder())
-                .size(egui_extras::Size::exact(0.0))
-                .size(egui_extras::Size::exact(22.0))
-                .vertical(|mut strip| {
-                    strip.cell(|ui| {
-                        egui::ScrollArea::vertical().show(ui, |ui| {
-                            let header_size = 24.0;
+        show_config_window(self, ctx);
 
-                            ui.label(
-                                egui::RichText::new(concat!(
-                                    env!("CARGO_PKG_NAME"),
-                                    " Configuration"
-                                ))
-                                .size(header_size)
-                                .strong(),
-                            );
-
-                            self.config.show_ui(ui);
-
-                            ui.separator();
-
-                            egui::CollapsingHeader::new(
-                                egui::RichText::new(format!(
-                                    "OCR: {}",
-                                    self.config.ocr_service.name()
-                                ))
-                                .size(header_size),
-                            )
-                            .default_open(true)
-                            .show_unindented(ui, |ui| {
-                                self.services.ocr.show_config_ui(ui);
-                            });
-
-                            ui.separator();
-
-                            egui::CollapsingHeader::new(
-                                egui::RichText::new(format!(
-                                    "Dictionary: {}",
-                                    self.config.dictionary_service.name()
-                                ))
-                                .size(header_size),
-                            )
-                            .default_open(true)
-                            .show_unindented(ui, |ui| {
-                                self.services.dictionary.show_config_ui(ui);
-                            });
-
-                            ui.separator();
-
-                            egui::CollapsingHeader::new(
-                                egui::RichText::new(format!(
-                                    "SRS: {}",
-                                    self.config.srs_service.name()
-                                ))
-                                .size(header_size),
-                            )
-                            .default_open(true)
-                            .show_unindented(ui, |ui| {
-                                self.services.srs.show_config_ui(ui);
-                            });
-                        });
-                    });
-
-                    strip.empty();
-
-                    strip.cell(|ui| {
-                        ui.centered_and_justified(|ui| {
-                            if ui.button("Reload Services").clicked() {
-                                match Services::new(&self.config) {
-                                    Ok(services) => self.services = services,
-                                    Err(e) => self.popups.error(e),
-                                }
-                            }
-                        });
-                    });
-                });
-        });
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct Popups(Vec<Popup>);
-
-#[derive(Debug)]
-struct Popup {
-    message: String,
-    first_frame: bool,
-}
-
-impl Popups {
-    pub fn error(&mut self, e: anyhow::Error) {
-        let mut s = format!("Error: {e}\n");
-
-        for (idx, error) in e.chain().enumerate().skip(1) {
-            s.push_str(&format!("\t{}. {}\n", idx, error));
-        }
-
-        self.0.push(Popup {
-            message: s,
-            first_frame: true,
-        });
-    }
-
-    pub fn show(&mut self, ctx: &egui::Context) {
-        let mut close_popup = None;
-
-        for (idx, popup) in self.0.iter_mut().enumerate() {
-            ctx.show_viewport_immediate(
-                egui::ViewportId(egui::Id::new(&popup.message)),
-                egui::ViewportBuilder {
-                    inner_size: Some(vec2(640.0, 480.0)),
-                    ..Default::default()
-                },
-                |ctx, _| {
-                    if popup.first_frame {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-                        popup.first_frame = false
-                    }
-
-                    egui::CentralPanel::default().show(ctx, |ui| {
-                        egui_extras::StripBuilder::new(ui)
-                            .size(egui_extras::Size::remainder())
-                            .size(egui_extras::Size::exact(22.0))
-                            .vertical(|mut strip| {
-                                strip.cell(|ui| {
-                                    egui::ScrollArea::vertical().auto_shrink(false).show(
-                                        ui,
-                                        |ui| {
-                                            ui.label(&popup.message);
-                                        },
-                                    );
-                                });
-
-                                strip.cell(|ui| {
-                                    ui.centered_and_justified(|ui| {
-                                        if ui.button("Close").clicked() {
-                                            close_popup = Some(idx);
-                                        }
-                                    });
-                                });
-                            });
-                    });
-                },
-            );
-        }
-
-        if let Some(idx) = close_popup {
-            self.0.remove(idx);
-        }
+        self.popups.show(ctx);
     }
 }

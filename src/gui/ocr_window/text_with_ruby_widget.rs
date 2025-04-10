@@ -2,7 +2,7 @@ use core::f32;
 
 use eframe::egui::{self, Color32, Widget};
 
-use crate::service::dictionary::TextWithRuby;
+use crate::word::TextWithRuby;
 
 // TODO: text selection?
 pub struct TextWithRubyWidget<'a> {
